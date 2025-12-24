@@ -1,0 +1,5 @@
+{
+  "name": "Steirische Simulator (B-Es-As-Des)",
+  "description": "Een virtuele Steirische Harmonika met B-Es-As-Des stemming. Speel melodie en bas, wissel tussen duwen en trekken, en leer noten met AI-ondersteuning.",
+  "requestFramePermissions": []
+}

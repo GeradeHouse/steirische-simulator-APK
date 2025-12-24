@@ -1,0 +1,4633 @@
+# Project Overview (included; respecting .gitignore)
+# Generated on: 2025-12-24 01:20:12
+# Total included files: 35
+
+# Project structure:
+- App.tsx
+
+- components/ (7 files)
+  - AccordionButton.tsx
+  - MainStage.tsx
+  - MidiControls.tsx
+  - PianoRoll.tsx
+  - ProjectLibrary.tsx
+  - SoundControls.tsx
+  - TopBar.tsx
+
+- constants.ts
+
+- helpers/ (5 files)
+  - appConfig.ts
+  - layout.json
+  - layoutGenerator.ts
+  - midiMap.ts
+  - projectStorage.ts
+
+- hooks/ (5 files)
+  - useAudioController.ts
+  - useBackgroundImage.ts
+  - useLayoutEditor.ts
+  - useMidiPlayer.ts
+  - useSoundSettings.ts
+
+- index.html
+
+- index.tsx
+
+- metadata.json
+
+- package.json
+
+- README.md
+
+- services/ (7 files)
+  - audio/
+    - generators.ts
+    - internalTypes.ts
+    - master.ts
+    - mechanics.ts
+    - voice.ts
+  - audioService.ts
+  - geminiService.ts
+
+- steirische-simulator-APK.code-workspace
+
+- tsconfig.json
+
+- types.ts
+
+- vite.config.ts
+
+
+# Project Files Listing
+
+App.tsx:1-(262)
+```
+import React, { useRef, useState, useEffect, useCallback } from 'react';
+import { TopBar } from './components/TopBar';
+import { MainStage } from './components/MainStage';
+import { SoundControls } from './components/SoundControls';
+import { MidiControls } from './components/MidiControls';
+import { ProjectLibrary } from './components/ProjectLibrary';
+import { ChevronLeftIcon, ChevronRightIcon, PencilSquareIcon, Bars3Icon } from '@heroicons/react/24/outline';
+
+import { useSoundSettings } from './hooks/useSoundSettings';
+import { useLayoutEditor } from './hooks/useLayoutEditor';
+import { useAudioController } from './hooks/useAudioController';
+import { useBackgroundImage } from './hooks/useBackgroundImage';
+import { useMidiPlayer } from './hooks/useMidiPlayer';
+
+export default function App() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Layout State ---
+  const [leftWidth, setLeftWidth] = useState(320);
+  const [rightWidth, setRightWidth] = useState(250);
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false);
+  const [isResizing, setIsResizing] = useState<'left' | 'right' | null>(null);
+
+  // Responsive Auto-Collapse
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      if (width < 1024 && !isRightCollapsed) setIsRightCollapsed(true);
+      if (width < 768 && !isLeftCollapsed) setIsLeftCollapsed(true);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isLeftCollapsed, isRightCollapsed]);
+
+  // Drag Handlers
+  const startResizing = (direction: 'left' | 'right') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(direction);
+  };
+
+  const stopResizing = useCallback(() => {
+    setIsResizing(null);
+  }, []);
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing) return;
+    
+    if (isResizing === 'left') {
+      const newWidth = Math.max(200, Math.min(450, e.clientX));
+      setLeftWidth(newWidth);
+    } else {
+      const newWidth = Math.max(200, Math.min(450, window.innerWidth - e.clientX));
+      setRightWidth(newWidth);
+    }
+  }, [isResizing]);
+
+  useEffect(() => {
+    if (isResizing) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', stopResizing);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', stopResizing);
+    };
+  }, [isResizing, handleMouseMove, stopResizing]);
+
+  const {
+    settings: soundSettings,
+    updateSetting,
+    resetSetting,
+    resetAllSettings
+  } = useSoundSettings();
+
+  const {
+    layout,
+    isEditing,
+    setIsEditing,
+    selectedButtonId,
+    setSelectedButtonId,
+    dragTarget,
+    handleDragStart,
+    saveLayout,
+    resetLayout,
+    handleImportLayout,
+    handleExportLayout
+  } = useLayoutEditor(containerRef);
+
+  const audioController = useAudioController(isEditing);
+  const {
+    direction,
+    activeNotes,
+    isAiEnabled,
+    setIsAiEnabled,
+    chordName,
+    chordDesc,
+    handleNoteStart,
+    handleNoteStop
+  } = audioController;
+
+  const {
+    bgImageSrc,
+    bgStatus,
+    manualPath,
+    setManualPath,
+    handleImgError,
+    handleImgLoad,
+    applyManualPath
+  } = useBackgroundImage();
+
+  const midiPlayer = useMidiPlayer(audioController);
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImportLayout(file);
+      e.target.value = '';
+    }
+  };
+
+  const triggerImport = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleBgDoubleClick = () => {
+    if (isEditing) setSelectedButtonId(null);
+  };
+
+  return (
+    <div className="w-screen h-screen flex flex-col bg-gray-100 overflow-hidden">
+      <input
+        type="file"
+        ref={fileInputRef}
+        style={{ display: 'none' }}
+        accept=".json"
+        onChange={onFileChange}
+      />
+
+      <TopBar
+        chordName={chordName}
+        chordDesc={chordDesc}
+        isAiEnabled={isAiEnabled}
+        setIsAiEnabled={setIsAiEnabled}
+        isEditing={isEditing}
+        setIsEditing={setIsEditing}
+        resetLayout={resetLayout}
+        saveLayout={saveLayout}
+        onExportLayout={handleExportLayout}
+        onImportLayout={triggerImport}
+      />
+
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* --- Left Panel (Sound) --- */}
+        <div
+          className={`relative flex flex-col border-r border-gray-300 bg-white transition-all duration-300 ease-in-out ${isLeftCollapsed ? 'w-10' : ''}`}
+          style={{ width: isLeftCollapsed ? undefined : leftWidth }}
+        >
+          <button
+            onClick={() => setIsLeftCollapsed(!isLeftCollapsed)}
+            className="absolute -right-4 top-2 z-50 bg-white border border-gray-300 rounded-lg p-1.5 shadow-sm hover:bg-gray-50 text-gray-600 flex items-center gap-0.5"
+            title={isLeftCollapsed ? "Expand Sound Settings" : "Collapse Sound Settings"}
+          >
+            <Bars3Icon className="w-4 h-4" />
+            {isLeftCollapsed ? <ChevronRightIcon className="w-3 h-3 -ml-1" /> : <ChevronLeftIcon className="w-3 h-3 -ml-1" />}
+          </button>
+          
+          <div className={`flex-1 overflow-hidden ${isLeftCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            <SoundControls
+              settings={soundSettings}
+              onUpdate={updateSetting}
+              onReset={resetSetting}
+              onResetAll={resetAllSettings}
+            />
+          </div>
+        </div>
+
+        {/* Resize Handle Left */}
+        {!isLeftCollapsed && (
+          <div
+            className="w-1 hover:w-1.5 bg-gray-200 hover:bg-blue-400 cursor-col-resize z-40 transition-all"
+            onMouseDown={startResizing('left')}
+          />
+        )}
+
+        {/* --- Center Stage --- */}
+        <div className="flex-1 flex overflow-hidden relative bg-gray-100">
+          <MainStage
+            containerRef={containerRef}
+            bgImageSrc={bgImageSrc}
+            bgStatus={bgStatus}
+            handleImgError={handleImgError}
+            handleImgLoad={handleImgLoad}
+            manualPath={manualPath}
+            setManualPath={setManualPath}
+            applyManualPath={applyManualPath}
+            layout={layout}
+            direction={direction}
+            activeNotes={activeNotes}
+            isEditing={isEditing}
+            dragTarget={dragTarget}
+            selectedButtonId={selectedButtonId}
+            handleDragStart={handleDragStart}
+            handleNoteStart={handleNoteStart}
+            handleNoteStop={handleNoteStop}
+            handleBgDoubleClick={handleBgDoubleClick}
+            midiData={{
+              notes: midiPlayer.allNotes,
+              currentTime: midiPlayer.currentTime,
+              channelModes: midiPlayer.channelModes,
+              onSeek: midiPlayer.seek,
+              octaveShift: midiPlayer.octaveShift,
+              directionEvents: midiPlayer.directionEvents,
+              onUpdateDirections: midiPlayer.updateDirections,
+              alternativeButtons: midiPlayer.alternativeButtons,
+              onFingeringOverride: midiPlayer.setFingeringOverride,
+              isPlaying: midiPlayer.isPlaying
+            }}
+          />
+          <MidiControls player={midiPlayer} />
+        </div>
+
+        {/* Resize Handle Right */}
+        {!isRightCollapsed && (
+          <div
+            className="w-1 hover:w-1.5 bg-gray-200 hover:bg-blue-400 cursor-col-resize z-40 transition-all"
+            onMouseDown={startResizing('right')}
+          />
+        )}
+
+        {/* --- Right Panel (Projects/Help) --- */}
+        <div
+          className={`relative flex flex-col border-l border-gray-300 bg-white transition-all duration-300 ease-in-out ${isRightCollapsed ? 'w-10' : ''}`}
+          style={{ width: isRightCollapsed ? undefined : rightWidth }}
+        >
+          <button
+            onClick={() => setIsRightCollapsed(!isRightCollapsed)}
+            className="absolute -left-4 top-2 z-50 bg-white border border-gray-300 rounded-lg p-1.5 shadow-sm hover:bg-gray-50 text-gray-600 flex items-center gap-0.5"
+            title={isRightCollapsed ? "Expand Panel" : "Collapse Panel"}
+          >
+            {isRightCollapsed ? <ChevronLeftIcon className="w-3 h-3 -mr-1" /> : <ChevronRightIcon className="w-3 h-3 -mr-1" />}
+            <Bars3Icon className="w-4 h-4" />
+          </button>
+
+          <div className={`flex-1 overflow-y-auto p-4 ${isRightCollapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            <ProjectLibrary player={midiPlayer} />
+            
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <div className="bg-blue-50 border border-blue-100 rounded p-3 text-xs text-blue-800">
+                <div className="flex items-start gap-2">
+                  <PencilSquareIcon className="w-4 h-4 mt-0.5 flex-shrink-0"/>
+                  <p>Click <strong>Layout</strong> in the top bar to edit button positions.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+components/AccordionButton.tsx:1-(281)
+```
+// file: components/AccordionButton.tsx
+import React, { useRef, useState, useEffect } from 'react';
+import { NoteDefinition, Direction } from '../types';
+
+interface Props {
+  pushNote: NoteDefinition;
+  pullNote: NoteDefinition;
+  direction: Direction;
+  isActive: boolean;
+  isSelected?: boolean;
+  isBass?: boolean;
+  isMarked?: boolean;
+  isEditing?: boolean;
+  idLabel?: string;
+  isAlternative?: boolean;
+  onAlternativeClick?: () => void;
+  onPlay: (note: NoteDefinition, direction: Direction) => void;
+  onStop: () => void;
+  onDragStart: (e: React.MouseEvent | React.TouchEvent) => void;
+  style?: React.CSSProperties;
+}
+
+// Helper to separate "C#3 (des)" into { midi: "C#3", german: "des" }
+const parseLabel = (fullLabel: string) => {
+  const match = fullLabel.match(/^(.+?)\s*\((.+?)\)$/);
+  if (match) {
+    return { 
+      midi: match[1].trim().replace(' Major', ''), 
+      german: match[2].trim() 
+    };
+  }
+  return { midi: fullLabel, german: fullLabel };
+};
+
+export const AccordionButton: React.FC<Props> = ({
+  pushNote,
+  pullNote,
+  direction,
+  isActive,
+  isSelected,
+  isBass,
+  isMarked,
+  isEditing,
+  idLabel,
+  isAlternative,
+  onAlternativeClick,
+  onPlay,
+  onStop,
+  onDragStart,
+  style
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const isInteractionRef = useRef(false);
+
+  const handleStop = () => {
+    isInteractionRef.current = false;
+    onStop();
+  };
+
+  const pushData = parseLabel(pushNote.label);
+  const pullData = parseLabel(pullNote.label);
+
+  // --- Styles ---
+  const containerStyle = "rounded-full overflow-hidden shadow-sm transition-all duration-75 select-none absolute touch-none flex flex-col aspect-square pointer-events-auto";
+  const cursorClass = isEditing ? "cursor-move" : "cursor-pointer";
+  
+  const borderClass = (isEditing && isSelected) 
+    ? "ring-2 ring-blue-500 z-30" 
+    : "border border-[#b0a890] hover:border-[#8c8272]";
+
+  const markedClass = (!isEditing && isMarked) ? 'ring-2 ring-red-400/50 ring-offset-1 ring-offset-transparent' : '';
+
+  const textSize = isBass ? "text-[0.55rem] leading-tight" : "text-[0.6rem] leading-tight";
+  const textBase = `w-full h-full flex justify-center text-black font-medium ${textSize}`;
+
+  // Active State Visuals
+  const isPushActive = isActive && direction === Direction.PUSH;
+  const isPullActive = isActive && direction === Direction.PULL;
+  // Changed from yellow to bright blue with a background tint for better visibility
+  const activeRingClass = "ring-2 ring-inset ring-blue-600 z-20 shadow-[inset_0_0_15px_rgba(37,99,235,0.5)] bg-blue-400/20";
+  const alternativeRingClass = "ring-2 ring-inset ring-blue-300 bg-blue-300/40 z-30";
+
+  // --- 1. Tooltip Delay Logic ---
+  // Only show tooltip if the note has been active for >100ms.
+  // This prevents tooltips from flashing during fast glissando playing.
+  useEffect(() => {
+    let timer: number;
+    if (isActive && !isEditing) {
+      timer = window.setTimeout(() => {
+        setShowTooltip(true);
+      }, 100); 
+    } else {
+      setShowTooltip(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isActive, isEditing]);
+
+  // --- 2. Global Safety Check ---
+  // If the note is active, watch the GLOBAL mouse position.
+  // If the mouse escapes the button rect (even if mouseleave missed it), stop the note.
+  useEffect(() => {
+    if (!isActive || isEditing) return;
+
+    const handleGlobalMove = (e: MouseEvent) => {
+      if (!isInteractionRef.current) return;
+
+      if (containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        // Check if cursor is outside the button
+        const isOutside =
+          e.clientX < rect.left ||
+          e.clientX > rect.right ||
+          e.clientY < rect.top ||
+          e.clientY > rect.bottom;
+        
+        if (isOutside) {
+          handleStop();
+        }
+      }
+    };
+
+    const handleGlobalUp = () => {
+      if (isInteractionRef.current) {
+        handleStop();
+      }
+    };
+
+    window.addEventListener('mousemove', handleGlobalMove);
+    window.addEventListener('mouseup', handleGlobalUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMove);
+      window.removeEventListener('mouseup', handleGlobalUp);
+    };
+  }, [isActive, isEditing, onStop]);
+
+  // --- Logic Helpers ---
+
+  const getTargetFromEvent = (clientY: number) => {
+    if (!containerRef.current) return null;
+    const rect = containerRef.current.getBoundingClientRect();
+    const relativeY = clientY - rect.top;
+    const isTop = relativeY < (rect.height / 2);
+    
+    return {
+      dir: isTop ? Direction.PUSH : Direction.PULL,
+      note: isTop ? pushNote : pullNote
+    };
+  };
+
+  const triggerNote = (clientY: number) => {
+    const target = getTargetFromEvent(clientY);
+    if (!target) return;
+
+    if (isActive && direction === target.dir) return;
+
+    if (isActive) {
+      onStop();
+    }
+
+    onPlay(target.note, target.dir);
+  };
+
+  // --- Event Handlers ---
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (isEditing) {
+      onDragStart(e);
+      return;
+    }
+    
+    // Intercept for alternative selection
+    if (isAlternative && onAlternativeClick) {
+        e.preventDefault();
+        e.stopPropagation();
+        onAlternativeClick();
+        return;
+    }
+
+    if (e.button !== 0) return;
+    e.preventDefault();
+    isInteractionRef.current = true;
+    triggerNote(e.clientY);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isEditing) return;
+    if (e.buttons === 1) {
+      e.preventDefault();
+      isInteractionRef.current = true;
+      triggerNote(e.clientY);
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (isEditing) {
+      onDragStart(e);
+      return;
+    }
+    e.preventDefault();
+    isInteractionRef.current = true;
+    triggerNote(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isEditing) return;
+    if (e.cancelable) e.preventDefault();
+    triggerNote(e.touches[0].clientY);
+  };
+
+  return (
+    <>
+      {/* Main Container */}
+      <div
+        ref={containerRef}
+        className={`${containerStyle} ${cursorClass} ${borderClass} ${markedClass}`}
+        style={style}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleStop}
+        onMouseLeave={handleStop}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleStop}
+        onTouchCancel={handleStop}
+        onDragStart={(e) => { if (!isEditing) e.preventDefault(); }}
+      >
+        {/* Top Half (Push) */}
+        <div className={`flex-1 w-full bg-[#F8FAEB] relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-all duration-75 ${
+            isPushActive
+              ? activeRingClass
+              : (isAlternative && direction === Direction.PUSH ? alternativeRingClass : '')
+          }`}>
+          <div className={`${textBase} items-end pb-[1px]`}>
+            {pushData.midi}
+          </div>
+        </div>
+
+        {/* Bottom Half (Pull) */}
+        <div className={`flex-1 w-full bg-[#E5DDBA] relative rounded-b-full pointer-events-none transition-all duration-75 ${
+            isPullActive
+              ? activeRingClass
+              : (isAlternative && direction === Direction.PULL ? alternativeRingClass : '')
+          }`}>
+          <div className={`${textBase} items-start pt-[1px]`}>
+            {pullData.midi}
+          </div>
+        </div>
+
+        {/* Debug/Editing ID Label */}
+        {idLabel && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-40">
+             <span className={`bg-white/80 px-1 rounded text-[8px] font-bold text-red-600 ${isActive || isEditing ? 'opacity-100' : 'opacity-0'}`}>
+              {idLabel}
+            </span>
+          </div>
+        )}
+      </div>
+      
+      {/* Active Note Pop-up (Debounced) */}
+      {showTooltip && !isEditing && (
+        <div 
+            className="absolute z-50 pointer-events-none select-none"
+            style={{ 
+                left: style?.left, 
+                top: style?.top, 
+                width: 'auto',
+                transform: 'translate(-50%, -140%)' 
+            }}
+        >
+          <div className="flex flex-col items-center bg-gray-900/90 text-white text-xs rounded px-2 py-1 shadow-xl backdrop-blur-sm whitespace-nowrap">
+            <span className="font-bold text-yellow-400">
+              {direction === Direction.PUSH ? pushData.german : pullData.german}
+            </span>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+```
+
+components/MainStage.tsx:1-(284)
+```
+import React, { useMemo } from 'react';
+import { Direction, NoteDefinition, LayoutMap } from '../types';
+import { TREBLE_ROWS, BASS_ROWS } from '../constants';
+import { AccordionButton } from './AccordionButton';
+import { PianoRoll } from './PianoRoll';
+import { CANDIDATE_PATHS } from '../helpers/appConfig';
+import { DirectionEvent } from '../hooks/useMidiPlayer';
+import { getButtonIdsForNote } from '../helpers/midiMap';
+import {
+  PencilSquareIcon,
+  ExclamationTriangleIcon,
+  PhotoIcon
+} from '@heroicons/react/24/outline';
+
+interface MainStageProps {
+  containerRef: React.RefObject<HTMLDivElement>;
+  bgImageSrc: string;
+  bgStatus: 'loading' | 'loaded' | 'error';
+  handleImgError: () => void;
+  handleImgLoad: () => void;
+  manualPath: string;
+  setManualPath: (val: string) => void;
+  applyManualPath: (e: React.FormEvent) => void;
+  
+  layout: LayoutMap;
+  direction: Direction;
+  activeNotes: Set<string>;
+  isEditing: boolean;
+  dragTarget: string | null;
+  selectedButtonId: string | null;
+  handleDragStart: (e: React.MouseEvent | React.TouchEvent, id: string) => void;
+  handleNoteStart: (id: string, noteDef: NoteDefinition, type: 'bass' | 'chord' | 'treble', chordType?: any, direction?: Direction) => void;
+  handleNoteStop: (id: string) => void;
+  handleBgDoubleClick: () => void;
+  
+  midiData?: {
+    notes: any[];
+    currentTime: number;
+    channelModes: any;
+    onSeek: (t: number) => void;
+    octaveShift: number;
+    directionEvents: DirectionEvent[];
+    onUpdateDirections: (updates: any) => void;
+    alternativeButtons?: Set<string>;
+    onFingeringOverride?: (midi: number, time: number, channel: number, btnId: string) => void;
+    isPlaying: boolean;
+  };
+}
+
+export const MainStage: React.FC<MainStageProps> = ({
+  containerRef,
+  bgImageSrc,
+  bgStatus,
+  handleImgError,
+  handleImgLoad,
+  manualPath,
+  setManualPath,
+  applyManualPath,
+  layout,
+  direction,
+  activeNotes,
+  isEditing,
+  dragTarget,
+  selectedButtonId,
+  handleDragStart,
+  handleNoteStart,
+  handleNoteStop,
+  handleBgDoubleClick,
+  midiData
+}) => {
+  
+  const TREBLE_BTN_SIZE = 3.0; 
+  const BASS_BTN_SIZE = 3.85;   
+
+  // --- 1. Calculate Active MIDI Highlights (Button -> Piano Roll) ---
+  const activeMidiHighlights = useMemo(() => {
+    const highlights = new Set<string>();
+    
+    activeNotes.forEach(id => {
+      // Parse ID: type-row-col
+      const parts = id.split('-');
+      if (parts.length !== 3) return;
+      const type = parts[0];
+      const r = parseInt(parts[1]);
+      const b = parseInt(parts[2]);
+      
+      const rows = type === 'bass' ? BASS_ROWS : TREBLE_ROWS;
+      const def = rows.find(row => row.rowId === r)?.buttons[b];
+      
+      if (def) {
+        // We need to know which direction is active for this button press.
+        // The 'direction' prop is the global bellows direction.
+        // If the button is pressed, it plays the note corresponding to the global direction.
+        const noteDef = direction === Direction.PUSH ? def.push : def.pull;
+        highlights.add(`${noteDef.midi}-${direction}`);
+      }
+    });
+    
+    return highlights;
+  }, [activeNotes, direction]);
+
+  // --- 2. Handle Piano Roll Note Preview (Piano Roll -> Button) ---
+  const handlePianoRollPreview = (midi: number, dir: Direction, start: boolean) => {
+    const btnIds = getButtonIdsForNote(midi, dir);
+    
+    btnIds.forEach(id => {
+      if (start) {
+        // Find definition to get type/chordType
+        const parts = id.split('-');
+        const typeStr = parts[0];
+        const r = parseInt(parts[1]);
+        const b = parseInt(parts[2]);
+        const rows = typeStr === 'bass' ? BASS_ROWS : TREBLE_ROWS;
+        const def = rows.find(row => row.rowId === r)?.buttons[b];
+        
+        if (def) {
+          const noteDef = dir === Direction.PUSH ? def.push : def.pull;
+          const type = noteDef.type as any;
+          const chordType = noteDef.chordType;
+          handleNoteStart(id, { midi, label: 'Preview' }, type, chordType, dir);
+        }
+      } else {
+        handleNoteStop(id);
+      }
+    });
+  };
+
+  const renderButton = (
+    id: string,
+    mapping: { push: NoteDefinition, pull: NoteDefinition, isMarked?: boolean },
+    type: 'treble' | 'bass' | 'chord',
+    chordType?: any
+  ) => {
+    const pos = layout[id] || { left: 50, top: 50 };
+    const isActive = activeNotes.has(id);
+    const isSelected = id === selectedButtonId;
+    const isAlternative = midiData?.alternativeButtons?.has(id);
+    const size = type === 'treble' ? TREBLE_BTN_SIZE : BASS_BTN_SIZE;
+
+    // Handle click on alternative button
+    const handleAlternativeClick = () => {
+        if (!midiData?.onFingeringOverride) return;
+        
+        // Find the note that triggered this alternative
+        const currentMidiNote = midiData.notes.find(n => {
+            const start = n.time;
+            const end = n.time + n.duration;
+            const t = midiData.currentTime;
+            if (t >= start && t < end) {
+                // Check if this note maps to this button
+                const shifted = n.midi + (midiData.octaveShift * 12);
+                const noteDef = direction === Direction.PUSH ? mapping.push : mapping.pull;
+                return shifted === noteDef.midi;
+            }
+            return false;
+        });
+
+        if (currentMidiNote) {
+            midiData.onFingeringOverride(currentMidiNote.midi, currentMidiNote.time, currentMidiNote.channel, id);
+        }
+    };
+
+    return (
+      <AccordionButton
+        key={id}
+        pushNote={mapping.push}
+        pullNote={mapping.pull}
+        direction={direction}
+        isActive={isActive}
+        isSelected={isSelected}
+        isBass={type !== 'treble'}
+        isMarked={mapping.isMarked}
+        isEditing={isEditing}
+        idLabel={isEditing ? id : undefined}
+        isAlternative={isAlternative}
+        onAlternativeClick={handleAlternativeClick}
+        style={{
+          left: `${pos.left}%`,
+          top: `${pos.top}%`,
+          width: `${size}%`,
+          position: 'absolute',
+          transform: 'translate(-50%, -50%)',
+          zIndex: isEditing && (dragTarget === id || isSelected) ? 50 : 10
+        }}
+        onDragStart={(e) => handleDragStart(e, id)}
+        onPlay={(note, dir) => handleNoteStart(id, note, type, chordType, dir)}
+        onStop={() => handleNoteStop(id)}
+      />
+    );
+  };
+
+  return (
+    <>
+      <div className="flex-1 relative overflow-hidden flex items-center justify-center p-4 bg-gray-200/50 select-none">
+        
+        <div 
+            ref={containerRef}
+            className="relative w-full max-w-6xl aspect-[4/3] bg-white shadow-2xl rounded-xl overflow-hidden border border-gray-300"
+            onDoubleClick={handleBgDoubleClick}
+        >
+          <img 
+            src={bgImageSrc}
+            alt="Technical Drawing" 
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none opacity-90 transition-opacity duration-300"
+            onError={handleImgError}
+            onLoad={handleImgLoad}
+          />
+
+          {bgStatus === 'error' && (
+             <div className="absolute top-4 left-4 right-4 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded z-50 shadow-lg">
+                <div className="flex items-center gap-2 font-bold mb-2">
+                    <ExclamationTriangleIcon className="w-6 h-6" />
+                    <span>Background Image Failed to Load</span>
+                </div>
+                <div className="text-sm mb-3 space-y-1">
+                    <p>The app could not find the background image. Check the console (F12) for paths.</p>
+                    <p className="text-xs">Tried: {CANDIDATE_PATHS.map(p => p.split('/').pop()).join(', ')}</p>
+                </div>
+                
+                <form onSubmit={applyManualPath} className="flex gap-2">
+                    <input 
+                        type="text" 
+                        placeholder="Paste URL or path here (e.g. /assets/my_photo.jpg)"
+                        className="flex-1 border border-red-300 rounded px-2 py-1 text-sm focus:outline-none focus:border-red-500"
+                        value={manualPath}
+                        onChange={(e) => setManualPath(e.target.value)}
+                    />
+                    <button type="submit" className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700">
+                        Try
+                    </button>
+                </form>
+             </div>
+          )}
+
+          {bgStatus === 'loading' && (
+             <div className="absolute top-4 left-4 z-50 text-gray-500 text-sm bg-white/90 p-2 rounded shadow backdrop-blur border border-gray-200 flex items-center gap-2">
+                <PhotoIcon className="w-4 h-4 animate-pulse" />
+                <span>Searching for image: {bgImageSrc}...</span>
+             </div>
+          )}
+
+          {midiData && (
+            <div className="absolute top-[18%] bottom-[18%] left-[23.8%] right-[30.4%] z-0 opacity-90 shadow-2xl">
+               <PianoRoll
+                  notes={midiData.notes}
+                  currentTime={midiData.currentTime}
+                  isPlaying={midiData.isPlaying}
+                  channelModes={midiData.channelModes}
+                  direction={direction}
+                  onSeek={midiData.onSeek}
+                  octaveShift={midiData.octaveShift}
+                  directionEvents={midiData.directionEvents}
+                  onUpdateDirections={midiData.onUpdateDirections}
+                  activeMidiHighlights={activeMidiHighlights}
+                  onNotePreview={handlePianoRollPreview}
+                />
+            </div>
+          )}
+
+          <div className="absolute inset-0 z-10 pointer-events-none">
+            {BASS_ROWS.map((row, rIdx) => (
+                row.buttons.map((btn, bIdx) => renderButton(
+                    `bass-${rIdx}-${bIdx}`, 
+                    btn, 
+                    btn.push.type === 'bass' ? 'bass' : 'chord',
+                    btn.push.type === 'chord' ? btn.push.chordType : undefined
+                ))
+            ))}
+
+            {TREBLE_ROWS.map((row, rIdx) => (
+                row.buttons.map((btn, bIdx) => renderButton(
+                    `treble-${rIdx}-${bIdx}`, 
+                    btn, 
+                    'treble'
+                ))
+            ))}
+          </div>
+
+        </div>
+      </div>
+      
+    </>
+  );
+};
+```
+
+components/MidiControls.tsx:1-(139)
+```
+import React, { useRef } from 'react';
+import { PlayIcon, PauseIcon, StopIcon, FolderOpenIcon, PlusIcon, MinusIcon, SpeakerWaveIcon, SpeakerXMarkIcon } from '@heroicons/react/24/solid';
+
+interface Props {
+  player: any; // ReturnType<typeof useMidiPlayer>
+}
+
+export const MidiControls: React.FC<Props> = ({ player }) => {
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const formatTime = (t: number) => {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur border border-gray-300 p-3 rounded-xl shadow-xl flex items-center gap-4 z-50">
+      {/* File Upload */}
+      <input 
+        type="file" 
+        accept=".mid,.midi" 
+        ref={fileInput} 
+        className="hidden"
+        onChange={(e) => e.target.files?.[0] && player.loadMidiFile(e.target.files[0])}
+      />
+      <button 
+        onClick={() => fileInput.current?.click()}
+        className="flex items-center gap-2 text-xs font-bold text-gray-600 hover:text-indigo-600"
+      >
+        <FolderOpenIcon className="w-5 h-5" />
+        {player.fileName ? <span className="max-w-[100px] truncate">{player.fileName}</span> : "Load MIDI"}
+      </button>
+
+      <div className="w-px h-8 bg-gray-300"></div>
+
+      {/* Transport */}
+      <button 
+        onClick={player.togglePlay}
+        disabled={!player.fileName}
+        className="p-2 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {player.isPlaying ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+      </button>
+
+      <button
+        onClick={player.resetPlayer}
+        disabled={!player.fileName}
+        className="p-2 rounded-full text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+      >
+        <StopIcon className="w-5 h-5" />
+      </button>
+
+      {/* Channel Selector */}
+      {player.availableChannels.length > 0 && (
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] font-bold text-gray-400 uppercase mr-1">CH</span>
+          <div className="flex gap-1 max-w-[150px] overflow-x-auto scrollbar-hide">
+            {player.availableChannels.map((ch: number) => {
+              const mode = player.channelModes[ch] || 'muted';
+              
+              let bgClass = 'bg-gray-200 text-gray-500'; // Muted
+              if (mode === 'both') bgClass = 'bg-indigo-600 text-white';
+              else if (mode === 'bass') bgClass = 'bg-amber-600 text-white';
+              else if (mode === 'treble') bgClass = 'bg-emerald-600 text-white';
+
+              return (
+                <button
+                  key={ch}
+                  onClick={() => player.cycleChannelMode(ch)}
+                  className={`w-5 h-5 text-[9px] rounded flex items-center justify-center transition-colors font-bold ${bgClass}`}
+                  title={`Channel ${ch + 1}: ${mode.toUpperCase()}`}
+                >
+                  {ch + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="w-px h-8 bg-gray-300"></div>
+
+      {/* Time & BPM */}
+      <div className="flex flex-col text-xs text-gray-600 font-mono">
+        <span>{formatTime(player.currentTime)} / {formatTime(player.totalTime)}</span>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-bold text-gray-500">BPM</span>
+        <input 
+          type="number" 
+          value={player.bpm}
+          onChange={(e) => player.setBpm(Number(e.target.value))}
+          className="w-14 px-1 py-0.5 border rounded text-xs text-center"
+        />
+      </div>
+
+      {/* Octave Shift */}
+      <div className="flex items-center gap-1">
+        <span className="text-xs font-bold text-gray-500">OCT</span>
+        <div className="flex items-center border rounded bg-gray-50">
+          <button
+            onClick={() => player.setOctaveShift(player.octaveShift - 1)}
+            className="px-1.5 py-0.5 hover:bg-gray-200 text-gray-600"
+          >
+            <MinusIcon className="w-3 h-3" />
+          </button>
+          <span className="text-xs font-mono w-6 text-center">{player.octaveShift > 0 ? '+' : ''}{player.octaveShift}</span>
+          <button
+            onClick={() => player.setOctaveShift(player.octaveShift + 1)}
+            className="px-1.5 py-0.5 hover:bg-gray-200 text-gray-600"
+          >
+            <PlusIcon className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      <div className="w-px h-8 bg-gray-300"></div>
+
+      {/* Scrubbing Sound Toggle */}
+      <button
+        onClick={() => player.setIsScrubbingSoundEnabled(!player.isScrubbingSoundEnabled)}
+        className={`p-2 rounded-full transition-colors ${
+          player.isScrubbingSoundEnabled
+            ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+            : 'text-gray-400 hover:bg-gray-100'
+        }`}
+        title={player.isScrubbingSoundEnabled ? "Scrubbing Sound ON" : "Scrubbing Sound OFF"}
+      >
+        {player.isScrubbingSoundEnabled ? (
+          <SpeakerWaveIcon className="w-5 h-5" />
+        ) : (
+          <SpeakerXMarkIcon className="w-5 h-5" />
+        )}
+      </button>
+    </div>
+  );
+};
+```
+
+components/PianoRoll.tsx:1-(444)
+```
+import React, { useMemo, useState, useRef, useEffect } from 'react';
+import { MidiNote, DirectionEvent } from '../hooks/useMidiPlayer';
+import { ChannelMode } from '../hooks/useMidiPlayer';
+import { Direction } from '../types';
+import { getButtonIdsForNote } from '../helpers/midiMap';
+import { ArrowRightIcon, ArrowLeftIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
+
+interface Props {
+  notes: MidiNote[];
+  currentTime: number;
+  isPlaying: boolean;
+  channelModes: Record<number, ChannelMode>;
+  direction: Direction;
+  onSeek: (time: number) => void;
+  octaveShift: number;
+  directionEvents?: DirectionEvent[];
+  onUpdateDirections?: (updates: { time: number, direction: Direction }[]) => void;
+  activeMidiHighlights?: Set<string>;
+  onNotePreview?: (midi: number, direction: Direction, start: boolean) => void;
+}
+
+// --- Hand-Drawn Note Component ---
+
+const HandDrawnNote: React.FC<{
+  width: number;
+  height: number;
+  label: string;
+  hasMapping: boolean;
+  isHighlighted: boolean;
+  wobbleId: string;
+}> = ({ width, height, label, hasMapping, isHighlighted }) => {
+  // Simplified Colors for performance
+  const border = isHighlighted ? '#2563EB' : (hasMapping ? '#876134' : '#EF4444');
+  const fill = isHighlighted ? '#3B82F6' : (hasMapping ? '#D39B51' : '#FECACA');
+  const text = isHighlighted ? '#FFFFFF' : (hasMapping ? '#F2E9C3' : '#7F1D1D');
+  
+  const pad = 2;
+  const w = Math.max(0, width - pad * 2);
+  const h = Math.max(0, height - pad * 2);
+
+  return (
+    <div className="w-full h-full relative">
+      <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+        <rect
+          x={pad} y={pad} width={w} height={h} rx="4"
+          fill={fill}
+          stroke={border}
+          strokeWidth="2"
+        />
+        <text
+          x="50%" y="50%" dy=".35em"
+          textAnchor="middle"
+          fill={text}
+          fontSize="11px"
+          fontWeight="bold"
+          style={{ pointerEvents: 'none', fontFamily: 'sans-serif' }}
+        >
+          {label}
+        </text>
+      </svg>
+
+      {!hasMapping && (
+        <div className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow-sm z-10">
+          <ExclamationTriangleIcon className="w-3 h-3 text-red-600" />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- Main Component ---
+
+const getNoteLabel = (midi: number) => {
+  const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const octave = Math.floor(midi / 12) - 1;
+  const note = notes[midi % 12];
+  return `${note}${octave}`;
+};
+
+const isBlackKey = (midi: number) => {
+  const n = midi % 12;
+  return n === 1 || n === 3 || n === 6 || n === 8 || n === 10;
+};
+
+export const PianoRoll: React.FC<Props> = ({
+  notes,
+  currentTime,
+  isPlaying,
+  channelModes,
+  onSeek,
+  octaveShift,
+  directionEvents = [],
+  onUpdateDirections,
+  activeMidiHighlights,
+  onNotePreview
+}) => {
+  // Configuration
+  const PX_PER_SEC = 150;
+  const NOTE_HEIGHT = 26; 
+  const MIN_MIDI = 0;
+  const MAX_MIDI = 127;
+  const TOTAL_HEIGHT = (MAX_MIDI - MIN_MIDI + 1) * NOTE_HEIGHT;
+
+  // Colors
+  const ROW_BLACK = '#F0EEE8';
+  const ROW_WHITE = '#FBFBF9';
+  const KEY_BLACK = '#E5E7EB'; 
+  const KEY_WHITE = '#FFFFFF';
+
+  // State
+  const [isDragging, setIsDragging] = useState(false);
+  const [selectedTimes, setSelectedTimes] = useState<Set<number>>(new Set());
+  
+  // Refs
+  const dragStartRef = useRef<{ x: number; time: number } | null>(null);
+  const onSeekRef = useRef(onSeek);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    onSeekRef.current = onSeek;
+  }, [onSeek]);
+
+  // Auto-Scroll to Highest Note on Load
+  useEffect(() => {
+    if (notes.length === 0 || !scrollContainerRef.current) return;
+    
+    let maxMidi = 0;
+    notes.forEach(n => {
+      if (n.midi > maxMidi) maxMidi = n.midi;
+    });
+    
+    // Calculate position of the highest note (using octaveShift * 12)
+    const shiftedMax = maxMidi + (octaveShift * 12);
+    const targetTop = (MAX_MIDI - shiftedMax) * NOTE_HEIGHT;
+    
+    // Scroll so the highest note is near the top (with 40px padding)
+    scrollContainerRef.current.scrollTop = Math.max(0, targetTop - 40);
+  }, [notes, octaveShift, MAX_MIDI, NOTE_HEIGHT]);
+
+  // --- Data Processing ---
+
+  const visibleNotes = useMemo(() => {
+    return notes.filter(note => {
+      const mode = channelModes[note.channel] || 'muted';
+      return mode !== 'muted';
+    });
+  }, [notes, channelModes]);
+
+  // Playback Auto-Scroll (Smooth Look-ahead)
+  useEffect(() => {
+    if (!isPlaying || !scrollContainerRef.current) return;
+
+    const LOOK_AHEAD = 1.8; // Look 1.8 seconds ahead (more proactive)
+    const PADDING = 50;     // Pixels from top
+    const SMOOTHING = 0.08; // Faster catch-up (8% per frame)
+
+    // Find notes in the look-ahead window [currentTime, currentTime + LOOK_AHEAD]
+    const relevantNotes = visibleNotes.filter(n =>
+      n.time < currentTime + LOOK_AHEAD && (n.time + n.duration) > currentTime
+    );
+
+    if (relevantNotes.length === 0) return;
+
+    // Find the highest pitch (Max MIDI) in this window
+    let maxMidiInWindow = -Infinity;
+    relevantNotes.forEach(n => {
+      const shifted = n.midi + (octaveShift * 12);
+      if (shifted > maxMidiInWindow) maxMidiInWindow = shifted;
+    });
+
+    if (maxMidiInWindow === -Infinity) return;
+
+    // Calculate target scroll position
+    // (MAX_MIDI - midi) * NOTE_HEIGHT is the top Y of the note row
+    const targetTop = (MAX_MIDI - maxMidiInWindow) * NOTE_HEIGHT - PADDING;
+    
+    // Clamp target to valid scroll range
+    const container = scrollContainerRef.current;
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    const clampedTarget = Math.max(0, Math.min(targetTop, maxScroll));
+
+    const currentScroll = container.scrollTop;
+    
+    // Smooth Interpolation (Lerp)
+    const diff = clampedTarget - currentScroll;
+    
+    // Only scroll if difference is noticeable to avoid micro-jitter
+    if (Math.abs(diff) > 1.0) {
+       container.scrollTop = currentScroll + (diff * SMOOTHING);
+    }
+  }, [currentTime, isPlaying, visibleNotes, octaveShift, MAX_MIDI, NOTE_HEIGHT]);
+
+  const arrowGroups = useMemo(() => {
+    const groups: { time: number, lowestMidi: number, notes: MidiNote[] }[] = [];
+    const sorted = [...visibleNotes].sort((a, b) => a.time - b.time);
+    
+    sorted.forEach(note => {
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && Math.abs(note.time - lastGroup.time) < 0.02) {
+        lastGroup.notes.push(note);
+        lastGroup.lowestMidi = Math.min(lastGroup.lowestMidi, note.midi);
+      } else {
+        groups.push({ time: note.time, lowestMidi: note.midi, notes: [note] });
+      }
+    });
+    return groups;
+  }, [visibleNotes]);
+
+  const getDirectionAtTime = (time: number) => {
+    let dir = Direction.PUSH;
+    for (const event of directionEvents) {
+      if (event.time <= time + 0.001) {
+        dir = event.direction;
+      } else {
+        break;
+      }
+    }
+    return dir;
+  };
+
+  // --- Handlers ---
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.button === 0) {
+        setIsDragging(true);
+        dragStartRef.current = { x: e.clientX, time: currentTime };
+    }
+  };
+
+  const handleArrowClick = (e: React.MouseEvent, time: number, currentDir: Direction) => {
+      e.stopPropagation();
+      if (!onUpdateDirections) return;
+      
+      const newSelected = new Set<number>(selectedTimes);
+      if (!newSelected.has(time)) {
+          newSelected.clear();
+          newSelected.add(time);
+          setSelectedTimes(newSelected);
+      }
+
+      let allSame = true;
+      let firstDir: Direction | null = null;
+      const updates: { time: number, direction: Direction }[] = [];
+      
+      const selectedDirs = new Map<number, Direction>();
+      newSelected.forEach(t => {
+          selectedDirs.set(t, getDirectionAtTime(t));
+      });
+
+      for (const d of selectedDirs.values()) {
+          if (firstDir === null) firstDir = d;
+          else if (firstDir !== d) {
+              allSame = false;
+              break;
+          }
+      }
+
+      let targetDir: Direction;
+      if (!allSame) {
+          targetDir = currentDir; 
+      } else {
+          targetDir = firstDir === Direction.PUSH ? Direction.PULL : Direction.PUSH;
+      }
+
+      newSelected.forEach(t => {
+          updates.push({ time: t, direction: targetDir });
+      });
+
+      onUpdateDirections(updates);
+  };
+
+  const handleNoteMouseDown = (e: React.MouseEvent, midi: number, dir: Direction) => {
+    e.stopPropagation(); 
+    if (onNotePreview) onNotePreview(midi, dir, true);
+  };
+
+  const handleNoteMouseUp = (e: React.MouseEvent, midi: number, dir: Direction) => {
+    e.stopPropagation();
+    if (onNotePreview) onNotePreview(midi, dir, false);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !dragStartRef.current) return;
+      const dx = e.clientX - dragStartRef.current.x;
+      const newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+      onSeekRef.current(newTime);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      dragStartRef.current = null;
+    };
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, PX_PER_SEC]); 
+
+  const rows = useMemo(() => {
+    const r = [];
+    for (let m = MAX_MIDI; m >= MIN_MIDI; m--) {
+      r.push(m);
+    }
+    return r;
+  }, [MAX_MIDI, MIN_MIDI]);
+
+  return (
+    <div 
+      ref={scrollContainerRef}
+      className="w-full h-full overflow-y-auto overflow-x-hidden bg-white border-2 border-gray-300 rounded-lg shadow-inner select-none relative"
+    >
+
+      <div className="relative" style={{ height: TOTAL_HEIGHT }}>
+        
+        {/* 1. Left Sidebar (Keys) */}
+        <div className="absolute left-0 top-0 bottom-0 w-12 z-20 border-r border-gray-300 shadow-md bg-gray-50">
+           {rows.map(midi => (
+             <div 
+               key={`key-${midi}`}
+               className="flex items-center justify-center text-[10px] font-bold text-gray-600 border-b border-gray-200"
+               style={{ 
+                 height: NOTE_HEIGHT, 
+                 backgroundColor: isBlackKey(midi) ? KEY_BLACK : KEY_WHITE,
+                 fontFamily: '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif'
+               }}
+             >
+               {getNoteLabel(midi)}
+             </div>
+           ))}
+        </div>
+
+        {/* 2. Main Content Area */}
+        <div 
+          ref={contentRef}
+          className={`absolute top-0 bottom-0 left-12 right-0 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          onMouseDown={handleMouseDown}
+          onDoubleClick={() => setSelectedTimes(new Set())}
+        >
+           {/* Background Rows */}
+           <div className="absolute inset-0 z-0 pointer-events-none">
+             {rows.map(midi => (
+               <div 
+                 key={`row-${midi}`}
+                 className="w-full border-b border-gray-100/50"
+                 style={{ 
+                   height: NOTE_HEIGHT, 
+                   backgroundColor: isBlackKey(midi) ? ROW_BLACK : ROW_WHITE 
+                 }}
+               />
+             ))}
+           </div>
+
+           {/* Playhead */}
+           <div className="absolute left-[20%] top-0 bottom-0 w-0.5 bg-red-400/60 z-30 pointer-events-none shadow-[0_0_4px_rgba(248,113,113,0.5)]"></div>
+
+           {/* Notes Container */}
+           <div 
+             className="absolute top-0 bottom-0 left-[20%] will-change-transform z-10"
+             style={{ transform: `translateX(-${currentTime * PX_PER_SEC}px)` }}
+           >
+              {visibleNotes.map((note, idx) => {
+                const left = note.time * PX_PER_SEC;
+                const width = Math.max(note.duration * PX_PER_SEC, 10);
+                const shiftedMidi = note.midi + (octaveShift * 12);
+                const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT; 
+                const label = getNoteLabel(shiftedMidi);
+                
+                const noteDir = getDirectionAtTime(note.time);
+                const hasMapping = getButtonIdsForNote(shiftedMidi, noteDir).length > 0;
+                const highlightKey = `${shiftedMidi}-${noteDir}`;
+                const isUnderPlayhead = currentTime >= note.time && currentTime < (note.time + note.duration);
+                const isHighlighted = activeMidiHighlights?.has(highlightKey) && isUnderPlayhead;
+
+                // Deterministic random wobble
+                const wobbleIdx = (note.midi + Math.floor(note.time)) % 3 + 1;
+
+                return (
+                  <div
+                    key={`${note.midi}-${note.time}-${idx}`}
+                    className="absolute transition-transform hover:scale-[1.02]"
+                    style={{
+                      left: `${left}px`,
+                      top: `${top}px`,
+                      width: `${width}px`,
+                      height: `${NOTE_HEIGHT}px`,
+                    }}
+                    onMouseDown={(e) => handleNoteMouseDown(e, shiftedMidi, noteDir)}
+                    onMouseUp={(e) => handleNoteMouseUp(e, shiftedMidi, noteDir)}
+                    onMouseLeave={(e) => handleNoteMouseUp(e, shiftedMidi, noteDir)}
+                  >
+                    <HandDrawnNote 
+                      width={width} 
+                      height={NOTE_HEIGHT} 
+                      label={label} 
+                      hasMapping={hasMapping}
+                      isHighlighted={!!isHighlighted}
+                      wobbleId={`wobble${wobbleIdx}`}
+                    />
+                  </div>
+                );
+              })}
+
+              {/* Arrows */}
+              {arrowGroups.map((group) => {
+                  const left = group.time * PX_PER_SEC;
+                  const shiftedMidi = group.lowestMidi + (octaveShift * 12);
+                  const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT; 
+                  const dir = getDirectionAtTime(group.time);
+                  const isSelected = selectedTimes.has(group.time);
+                  
+                  return (
+                      <div
+                          key={`arrow-${group.time}`}
+                          className={`absolute flex items-center justify-center w-6 h-6 cursor-pointer transition-transform hover:scale-125 z-20 ${isSelected ? 'text-blue-600 drop-shadow-md scale-110' : 'text-gray-500 opacity-60'}`}
+                          style={{
+                              left: `${left}px`,
+                              top: `${top - 4}px`,
+                          }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => handleArrowClick(e, group.time, dir)}
+                      >
+                          {dir === Direction.PUSH ? (
+                              <ArrowRightIcon className="w-4 h-4" />
+                          ) : (
+                              <ArrowLeftIcon className="w-4 h-4" />
+                          )}
+                      </div>
+                  );
+              })}
+           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+```
+
+components/ProjectLibrary.tsx:1-(152)
+```
+import React, { useState, useEffect } from 'react';
+import { MidiProject } from '../types';
+import { getProjectList, saveProject, loadProject, deleteProject } from '../helpers/projectStorage';
+import { TrashIcon, ArrowDownTrayIcon, FolderOpenIcon, PlusIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+
+interface Props {
+  player: any; // ReturnType<typeof useMidiPlayer>
+}
+
+export const ProjectLibrary: React.FC<Props> = ({ player }) => {
+  const [projects, setProjects] = useState<{ id: string; name: string; lastModified: number }[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveName, setSaveName] = useState('');
+
+  useEffect(() => {
+    refreshList();
+  }, []);
+
+  const refreshList = () => {
+    setProjects(getProjectList().sort((a, b) => b.lastModified - a.lastModified));
+  };
+
+  const handleSave = (asNew: boolean) => {
+    const state = player.getProjectState();
+    if (!state) return;
+
+    const name = saveName.trim() || player.fileName || 'Untitled Project';
+    const id = (asNew || !player.currentProjectId) ? crypto.randomUUID() : player.currentProjectId;
+
+    const project: MidiProject = {
+      id,
+      name: asNew ? name : (projects.find(p => p.id === id)?.name || name),
+      lastModified: Date.now(),
+      ...state
+    };
+
+    saveProject(project);
+    if (asNew) player.loadProject(project); // Switch context to new ID
+    
+    setIsSaving(false);
+    setSaveName('');
+    refreshList();
+  };
+
+  const handleLoad = (id: string) => {
+    const proj = loadProject(id);
+    if (proj) {
+      player.loadProject(proj);
+    }
+  };
+
+  const handleDelete = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Delete this project?')) {
+      deleteProject(id);
+      refreshList();
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <h3 className="font-bold text-gray-700 mb-4 text-sm uppercase tracking-wider border-b pb-2 flex items-center gap-2">
+        <FolderOpenIcon className="w-4 h-4"/>
+        MIDI Projects
+      </h3>
+
+      {/* Save Controls */}
+      {player.fileName && (
+        <div className="mb-4 p-3 bg-indigo-50 rounded border border-indigo-100">
+          <div className="text-xs font-bold text-indigo-800 mb-2 truncate">
+            Current: {player.fileName}
+          </div>
+          
+          {isSaving ? (
+            <div className="flex flex-col gap-2">
+              <input 
+                type="text" 
+                placeholder="Project Name" 
+                className="text-xs p-1 border rounded"
+                value={saveName}
+                onChange={e => setSaveName(e.target.value)}
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button onClick={() => handleSave(true)} className="flex-1 bg-indigo-600 text-white text-xs py-1 rounded hover:bg-indigo-700">
+                  Save New
+                </button>
+                <button onClick={() => setIsSaving(false)} className="px-2 bg-gray-200 text-gray-600 text-xs rounded hover:bg-gray-300">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              {player.currentProjectId && (
+                <button 
+                  onClick={() => handleSave(false)}
+                  className="flex-1 flex items-center justify-center gap-1 bg-indigo-100 text-indigo-700 text-xs py-1.5 rounded hover:bg-indigo-200 border border-indigo-200"
+                >
+                  <ArrowPathIcon className="w-3 h-3" /> Update
+                </button>
+              )}
+              <button 
+                onClick={() => { setSaveName(player.fileName || ''); setIsSaving(true); }}
+                className="flex-1 flex items-center justify-center gap-1 bg-white text-gray-700 text-xs py-1.5 rounded hover:bg-gray-50 border border-gray-300"
+              >
+                <PlusIcon className="w-3 h-3" /> Save As...
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Project List */}
+      <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
+        {projects.length === 0 ? (
+          <div className="text-center text-xs text-gray-400 italic mt-4">
+            No saved projects.<br/>Load a MIDI file to start.
+          </div>
+        ) : (
+          projects.map(p => (
+            <div 
+              key={p.id}
+              onClick={() => handleLoad(p.id)}
+              className={`group p-2 rounded border cursor-pointer transition-all hover:shadow-sm ${
+                player.currentProjectId === p.id 
+                  ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' 
+                  : 'bg-white border-gray-200 hover:border-blue-300'
+              }`}
+            >
+              <div className="flex justify-between items-start">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-gray-700 truncate">{p.name}</div>
+                  <div className="text-[10px] text-gray-400">
+                    {new Date(p.lastModified).toLocaleDateString()} {new Date(p.lastModified).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                  </div>
+                </div>
+                <button 
+                  onClick={(e) => handleDelete(p.id, e)}
+                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-600 transition-opacity"
+                  title="Delete Project"
+                >
+                  <TrashIcon className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+components/SoundControls.tsx:1-(159)
+```
+// file: components/SoundControls.tsx
+import React from 'react';
+import { SoundSettings } from '../types';
+import { AdjustmentsHorizontalIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+
+interface Props {
+  settings: SoundSettings;
+  onUpdate: (key: keyof SoundSettings, value: number) => void;
+  onReset: (key: keyof SoundSettings) => void;
+  onResetAll: () => void;
+}
+
+interface ControlDef {
+  key: keyof SoundSettings;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  tooltip: string;
+  unit?: string;
+}
+
+const CATEGORIES: { name: string; controls: ControlDef[] }[] = [
+  {
+    name: "Reed Physics & Tuning",
+    controls: [
+      { key: "musetteDetune", label: "Musette Detune", min: 0, max: 50, step: 0.5, unit: "ct", tooltip: "Pitch difference between treble reeds (Wetness)." },
+      { key: "reedAttackTime", label: "Attack Time", min: 0.001, max: 0.1, step: 0.001, unit: "s", tooltip: "How fast the reed speaks after air hits it." },
+      { key: "reedReleaseTime", label: "Release Time", min: 0.05, max: 1.0, step: 0.01, unit: "s", tooltip: "Vibration inertia after button release." },
+      { key: "pitchInstability", label: "Pitch Drift", min: 0, max: 10, step: 0.1, unit: "ct", tooltip: "Random organic pitch wandering." },
+      { key: "bellowsPitchBend", label: "Bellows Bend", min: 0, max: 20, step: 0.5, unit: "ct", tooltip: "Pitch drop under high pressure." },
+      { key: "harmonicBrightness", label: "Harmonic Brightness", min: 0.5, max: 2.5, step: 0.1, tooltip: "Waveform shape: Low=Dull, High=Buzzy." },
+      { key: "bassGrowl", label: "Bass Growl", min: 0, max: 3.0, step: 0.1, tooltip: "Boosts even harmonics for Helikon rasp." },
+      { key: "reedStiffness", label: "Reed Stiffness", min: 0.5, max: 2.0, step: 0.1, tooltip: "Modulates the attack curve shape." },
+      { key: "trebleOctaveBalance", label: "Treble Octave Mix", min: 0, max: 1, step: 0.05, tooltip: "Balance of high octave reeds." },
+      { key: "bassOctaveBalance", label: "Bass Octave Mix", min: 0, max: 1, step: 0.05, tooltip: "Balance of upper bass octave." },
+    ]
+  },
+  {
+    name: "Bellows & Air",
+    controls: [
+      { key: "airNoiseLevel", label: "Air Noise", min: 0, max: 0.2, step: 0.001, tooltip: "Hiss of air through valves." },
+      { key: "airTurbulence", label: "Air Turbulence", min: 0, max: 1, step: 0.05, tooltip: "Random fluctuations in air noise." },
+      { key: "bellowsShakeSpeed", label: "Shake Speed", min: 0, max: 15, step: 0.5, unit: "Hz", tooltip: "Vibrato speed for bellows shake." },
+      { key: "bellowsShakeDepth", label: "Shake Depth", min: 0, max: 1, step: 0.05, tooltip: "Intensity of bellows shake." },
+      { key: "dynamicRange", label: "Dynamic Range", min: 0, max: 1, step: 0.05, tooltip: "Volume response to pressure." },
+      { key: "pushPullVariance", label: "Push/Pull Var", min: 0, max: 1, step: 0.05, tooltip: "Timbre shift between directions." },
+    ]
+  },
+  {
+    name: "Mechanics",
+    controls: [
+      { key: "buttonClickVolume", label: "Click Volume", min: 0, max: 1, step: 0.05, tooltip: "Volume of the button press 'clack'." },
+      { key: "palletThudVolume", label: "Thud Volume", min: 0, max: 1, step: 0.05, tooltip: "Volume of the release 'thump'." },
+      { key: "mechanismNoiseRandomness", label: "Mech Randomness", min: 0, max: 1, step: 0.05, tooltip: "Variance in mechanical noises." },
+      { key: "bassButtonClunk", label: "Bass Clunk", min: 0, max: 1, step: 0.05, tooltip: "Heavier noise for bass buttons." },
+    ]
+  },
+  {
+    name: "Body & Resonance",
+    controls: [
+      { key: "boxResonanceFreq", label: "Box Freq", min: 200, max: 1000, step: 10, unit: "Hz", tooltip: "Wooden body resonant frequency." },
+      { key: "boxResonanceAmount", label: "Box Amount", min: 0, max: 20, step: 0.5, unit: "dB", tooltip: "Intensity of wood resonance." },
+      { key: "grilleFilterCutoff", label: "Grille Cutoff", min: 1000, max: 10000, step: 100, unit: "Hz", tooltip: "Muffling effect of the grille." },
+      { key: "cassottoEffect", label: "Cassotto", min: 0, max: 1, step: 0.05, tooltip: "Tone chamber simulation (nasal/round)." },
+      { key: "bassChamberResonance", label: "Bass Chamber", min: 0, max: 20, step: 0.5, unit: "dB", tooltip: "Resonance of the bass cavity." },
+    ]
+  },
+  {
+    name: "Effects & Environment",
+    controls: [
+      { key: "inputGain", label: "Input Drive", min: 0, max: 2.0, step: 0.05, tooltip: "Pre-amp gain. Increase to drive distortion." },
+      { key: "tubeSaturation", label: "Saturation", min: 0, max: 100, step: 1, tooltip: "Harmonic distortion/warmth." },
+      { key: "trebleStereoWidth", label: "Treble Width", min: 0, max: 1, step: 0.05, tooltip: "Stereo panning spread for treble." },
+      { key: "bassStereoWidth", label: "Bass Width", min: 0, max: 1, step: 0.05, tooltip: "Stereo panning spread for bass." },
+      { key: "reverbSize", label: "Reverb Size", min: 0.1, max: 5.0, step: 0.1, unit: "s", tooltip: "Room size/decay time." },
+      { key: "reverbMix", label: "Reverb Mix", min: 0, max: 1, step: 0.05, tooltip: "Wet/Dry balance." },
+      { key: "eqLow", label: "EQ Low", min: -20, max: 20, step: 1, unit: "dB", tooltip: "Bass frequencies." },
+      { key: "eqMid", label: "EQ Mid", min: -20, max: 20, step: 1, unit: "dB", tooltip: "Middle frequencies." },
+      { key: "eqHigh", label: "EQ High", min: -20, max: 20, step: 1, unit: "dB", tooltip: "Treble frequencies." },
+    ]
+  }
+];
+
+export const SoundControls: React.FC<Props> = ({ settings, onUpdate, onReset, onResetAll }) => {
+  return (
+    <div className="w-full bg-white border-r border-gray-200 flex flex-col shadow-xl z-30 h-full overflow-y-auto select-none">
+      <div className="p-4 border-b border-gray-200 bg-gray-50 sticky top-0 z-10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-gray-800 font-bold">
+            <AdjustmentsHorizontalIcon className="w-5 h-5" />
+            <span>Sound Module</span>
+          </div>
+          <button 
+            onClick={onResetAll}
+            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+            title="Reset All to Default"
+          >
+            <ArrowPathIcon className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="mt-3">
+           <div className="flex justify-between text-xs mb-1 text-gray-600 font-bold">
+            <span>Master Volume</span>
+            <span>{Math.round(settings.masterVolume * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min={0} max={1} step={0.01}
+            value={settings.masterVolume}
+            onChange={(e) => onUpdate("masterVolume", parseFloat(e.target.value))}
+            onDoubleClick={() => onReset("masterVolume")}
+            className="w-full h-2 bg-indigo-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+          />
+        </div>
+      </div>
+      
+      <div className="p-4 space-y-6">
+        {CATEGORIES.map((cat) => (
+          <div key={cat.name}>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-3 border-b pb-1">
+              {cat.name}
+            </h3>
+            <div className="space-y-3">
+              {cat.controls.map((ctrl) => (
+                <div key={ctrl.key} className="group relative">
+                  <div className="flex justify-between text-[10px] mb-1 text-gray-600 font-medium items-center">
+                    <div className="flex items-center gap-1 cursor-help">
+                      <span>{ctrl.label}</span>
+                      {/* Tooltip */}
+                      <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block w-48 bg-gray-800 text-white text-[10px] p-2 rounded shadow-lg z-50 pointer-events-none">
+                        {ctrl.tooltip}
+                      </div>
+                    </div>
+                    <span>{settings[ctrl.key]} {ctrl.unit}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={ctrl.min}
+                    max={ctrl.max}
+                    step={ctrl.step}
+                    value={settings[ctrl.key]}
+                    onChange={(e) => onUpdate(ctrl.key, parseFloat(e.target.value))}
+                    onDoubleClick={() => onReset(ctrl.key)}
+                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-500 hover:accent-indigo-500 transition-colors"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      <div className="mt-auto p-4 bg-gray-50 text-[10px] text-gray-400 text-center border-t">
+        Double-click slider to reset.
+      </div>
+    </div>
+  );
+};
+```
+
+components/TopBar.tsx:1-(96)
+```
+// file: components/TopBar.tsx
+import React from 'react';
+import { 
+  PencilSquareIcon, 
+  CheckCircleIcon, 
+  ArrowPathIcon, 
+  SparklesIcon,
+  ArrowDownTrayIcon,
+  ArrowUpTrayIcon
+} from '@heroicons/react/24/outline';
+
+interface TopBarProps {
+  chordName: string;
+  chordDesc: string;
+  isAiEnabled: boolean;
+  setIsAiEnabled: (val: boolean) => void;
+  isEditing: boolean;
+  setIsEditing: (val: boolean) => void;
+  resetLayout: () => void;
+  saveLayout: () => void;
+  onExportLayout: () => void;
+  onImportLayout: () => void;
+}
+
+export const TopBar: React.FC<TopBarProps> = ({
+  chordName,
+  chordDesc,
+  isAiEnabled,
+  setIsAiEnabled,
+  isEditing,
+  setIsEditing,
+  resetLayout,
+  saveLayout,
+  onExportLayout,
+  onImportLayout
+}) => {
+  return (
+    <div className="flex-none bg-white border-b border-gray-200 p-3 shadow-sm flex items-center justify-between z-20">
+      <div className="flex items-center gap-4">
+        <h1 className="text-xl font-bold text-gray-800 hidden md:block">Steirische Simulator</h1>
+      </div>
+
+      <div className="flex-1 mx-4 bg-gray-50 rounded border border-gray-200 px-3 py-1 text-center hidden sm:block flex items-center justify-center gap-4">
+         <div className="flex flex-col items-center">
+           <span className="font-bold text-gray-700 min-h-[1.5rem]">{chordName}</span>
+           <span className="text-gray-500 text-xs">{chordDesc}</span>
+         </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+         {/* AI Toggle Button */}
+         <button 
+           onClick={() => setIsAiEnabled(!isAiEnabled)}
+           className={`flex items-center gap-2 px-3 py-2 rounded border transition-colors ${
+             isAiEnabled 
+               ? 'bg-purple-100 text-purple-700 border-purple-300 hover:bg-purple-200' 
+               : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
+           }`}
+           title={isAiEnabled ? "Disable AI" : "Enable AI"}
+         >
+           <SparklesIcon className={`w-5 h-5 ${isAiEnabled ? 'animate-pulse' : ''}`} />
+           <span className="hidden md:inline text-sm font-medium">{isAiEnabled ? 'AI On' : 'AI Off'}</span>
+         </button>
+
+         <div className="w-px h-6 bg-gray-300 mx-1"></div>
+
+         {isEditing ? (
+           <>
+              {/* Import/Export Buttons (Only visible in Edit mode) */}
+              <button onClick={onImportLayout} className="p-2 text-gray-600 hover:bg-gray-100 rounded" title="Import Layout (JSON)">
+                <ArrowUpTrayIcon className="w-6 h-6" />
+              </button>
+              <button onClick={onExportLayout} className="p-2 text-gray-600 hover:bg-gray-100 rounded" title="Export Layout (JSON)">
+                <ArrowDownTrayIcon className="w-6 h-6" />
+              </button>
+
+              <div className="w-px h-6 bg-gray-300 mx-1"></div>
+
+              <button onClick={resetLayout} className="p-2 text-red-600 hover:bg-red-50 rounded" title="Reset to Default">
+                <ArrowPathIcon className="w-6 h-6" />
+              </button>
+              <button onClick={saveLayout} className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                <CheckCircleIcon className="w-5 h-5" />
+                <span>Done</span>
+              </button>
+           </>
+         ) : (
+           <button onClick={() => setIsEditing(true)} className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 rounded">
+             <PencilSquareIcon className="w-5 h-5" />
+             <span className="hidden md:inline">Layout</span>
+           </button>
+         )}
+      </div>
+    </div>
+  );
+};
+```
+
+constants.ts:1-(215)
+```
+// file: constants.ts
+import { NoteDefinition } from './types';
+
+interface ButtonDef {
+  push: NoteDefinition;
+  pull: NoteDefinition;
+}
+
+interface RowDef {
+  rowId: number;
+  buttons: ButtonDef[];
+}
+
+export const BASS_ROWS: RowDef[] = [
+  {
+    rowId: 0,
+    buttons: [
+      // bass-0-0: Bass Note -> Push: C#2 (MIDI 37), Pull: G#2 (MIDI 44)
+      { 
+        push: { midi: 37, label: "C#2 (des)", type: "bass" }, 
+        pull: { midi: 44, label: "G#2 (as)", type: "bass" } 
+      },
+      // bass-0-1: Chord -> Push: C#3 Major, Pull: G#3 Major
+      { 
+        push: { midi: 49, label: "C#3 Major (Des)", type: "chord", chordType: "major" }, 
+        pull: { midi: 56, label: "G#3 Major (As)", type: "chord", chordType: "major" } 
+      },
+      // bass-0-2: Bass Note -> Push: G#2 (MIDI 44), Pull: D#2 (MIDI 39)
+      { 
+        push: { midi: 44, label: "G#2 (as)", type: "bass" }, 
+        pull: { midi: 39, label: "D#2 (es)", type: "bass" } 
+      },
+      // bass-0-3: Chord -> Push: G#3 Major, Pull: D#3 Major
+      { 
+        push: { midi: 56, label: "G#3 Major (As)", type: "chord", chordType: "major" }, 
+        pull: { midi: 51, label: "D#3 Major (Es)", type: "chord", chordType: "major" } 
+      },
+      // bass-0-4: Bass Note -> Push: D#2 (MIDI 39), Pull: A#2 (MIDI 46)
+      { 
+        push: { midi: 39, label: "D#2 (es)", type: "bass" }, 
+        pull: { midi: 46, label: "A#2 (b)", type: "bass" } 
+      },
+      // bass-0-5: Chord -> Push: D#3 Major, Pull: A#2 Major
+      { 
+        push: { midi: 51, label: "D#3 Major (Es)", type: "chord", chordType: "major" }, 
+        pull: { midi: 46, label: "A#2 Major (B)", type: "chord", chordType: "major" } 
+      },
+      // bass-0-6: Bass Note -> Push: A#2 (MIDI 46), Pull: F2 (MIDI 41)
+      { 
+        push: { midi: 46, label: "A#2 (b)", type: "bass" }, 
+        pull: { midi: 41, label: "F2 (f)", type: "bass" } 
+      },
+      // bass-0-7: Chord -> Push: A#2 Major, Pull: F3 Major
+      { 
+        push: { midi: 46, label: "A#2 Major (B)", type: "chord", chordType: "major" }, 
+        pull: { midi: 53, label: "F3 Major (F)", type: "chord", chordType: "major" } 
+      },
+    ]
+  },
+  {
+    rowId: 1,
+    buttons: [
+      // bass-1-0: Bass Note -> Push: F2 (MIDI 41), Pull: F#2 (MIDI 42)
+      { 
+        push: { midi: 41, label: "F2 (f)", type: "bass" }, 
+        pull: { midi: 42, label: "F#2 (ges)", type: "bass" } 
+      },
+      // bass-1-1: Chord -> Push: F3 Major, Pull: F#3 Major
+      { 
+        push: { midi: 53, label: "F3 Major (F)", type: "chord", chordType: "major" }, 
+        pull: { midi: 54, label: "F#3 Major (Ges)", type: "chord", chordType: "major" } 
+      },
+      // bass-1-2: Bass Note -> Push: C2 (MIDI 36), Pull: C#2 (MIDI 37)
+      { 
+        push: { midi: 36, label: "C2 (c)", type: "bass" }, 
+        pull: { midi: 37, label: "C#2 (des)", type: "bass" } 
+      },
+      // bass-1-3: Chord -> Push: C3 Major, Pull: C#3 Major
+      { 
+        push: { midi: 48, label: "C3 Major (C)", type: "chord", chordType: "major" }, 
+        pull: { midi: 49, label: "C#3 Major (Des)", type: "chord", chordType: "major" } 
+      },
+      // bass-1-4: Bass Note -> Push: G2 (MIDI 43), Pull: G#2 (MIDI 44)
+      { 
+        push: { midi: 43, label: "G2 (g)", type: "bass" }, 
+        pull: { midi: 44, label: "G#2 (as)", type: "bass" } 
+      },
+      // bass-1-5: Chord -> Push: G3 Major, Pull: A#2 Major
+      { 
+        push: { midi: 55, label: "G3 Major (G)", type: "chord", chordType: "major" }, 
+        pull: { midi: 46, label: "A#2 Major (B)", type: "chord", chordType: "major" } 
+      },
+      // bass-1-6: Bass Note -> Push: C#2 (MIDI 37), Pull: C2 (MIDI 36)
+      { 
+        push: { midi: 37, label: "C#2 (des)", type: "bass" }, 
+        pull: { midi: 36, label: "C2 (c)", type: "bass" } 
+      },
+    ]
+  }
+];
+
+export const TREBLE_ROWS: RowDef[] = [
+  {
+    rowId: 0,
+    buttons: [
+      // treble-0-0: Push: C#7 (des''''), Pull: A#6 (b''')
+      { push: { midi: 97, label: "C#7 (des'''')", type: "treble" }, pull: { midi: 94, label: "A#6 (b''')", type: "treble" } },
+      // treble-0-1: Push: G#6 (as'''), Pull: F#6 (ges''')
+      { push: { midi: 92, label: "G#6 (as''')", type: "treble" }, pull: { midi: 90, label: "F#6 (ges''')", type: "treble" } },
+      // treble-0-2: Push: F6 (f'''), Pull: D#6 (es''')
+      { push: { midi: 89, label: "F6 (f''')", type: "treble" }, pull: { midi: 87, label: "D#6 (es''')", type: "treble" } },
+      // treble-0-3: Push: C#6 (des'''), Pull: C6 (c''')
+      { push: { midi: 85, label: "C#6 (des''')", type: "treble" }, pull: { midi: 84, label: "C6 (c''')", type: "treble" } },
+      // treble-0-4: Push: G#5 (as''), Pull: G#5 (as'')
+      { push: { midi: 80, label: "G#5 (as'')", type: "treble" }, pull: { midi: 80, label: "G#5 (as'')", type: "treble" } },
+      // treble-0-5: Push: F5 (f''), Pull: F#5 (ges'')
+      { push: { midi: 77, label: "F5 (f'')", type: "treble" }, pull: { midi: 78, label: "F#5 (ges'')", type: "treble" } },
+      // treble-0-6: Push: C#5 (des''), Pull: D#5 (es'')
+      { push: { midi: 73, label: "C#5 (des'')", type: "treble" }, pull: { midi: 75, label: "D#5 (es'')", type: "treble" } },
+      // treble-0-7: Push: G#4 (as'), Pull: C5 (c'')
+      { push: { midi: 68, label: "G#4 (as')", type: "treble" }, pull: { midi: 72, label: "C5 (c'')", type: "treble" } },
+      // treble-0-8: Push: F4 (f'), Pull: G#4 (as')
+      { push: { midi: 65, label: "F4 (f')", type: "treble" }, pull: { midi: 68, label: "G#4 (as')", type: "treble" } },
+      // treble-0-9: Push: C#4 (des'), Pull: F#4 (ges')
+      { push: { midi: 61, label: "C#4 (des')", type: "treble" }, pull: { midi: 66, label: "F#4 (ges')", type: "treble" } },
+    ]
+  },
+  {
+    rowId: 1,
+    buttons: [
+      // treble-1-0: Push: C7 (c''''), Pull: G6 (g''')
+      { push: { midi: 96, label: "C7 (c'''')", type: "treble" }, pull: { midi: 91, label: "G6 (g''')", type: "treble" } },
+      // treble-1-1: Push: G#6 (as'''), Pull: F6 (f''')
+      { push: { midi: 92, label: "G#6 (as''')", type: "treble" }, pull: { midi: 89, label: "F6 (f''')", type: "treble" } },
+      // treble-1-2: Push: D#6 (es'''), Pull: C#6 (des''')
+      { push: { midi: 87, label: "D#6 (es''')", type: "treble" }, pull: { midi: 85, label: "C#6 (des''')", type: "treble" } },
+      // treble-1-3: Push: C6 (c'''), Pull: A#5 (b'')
+      { push: { midi: 84, label: "C6 (c''')", type: "treble" }, pull: { midi: 82, label: "A#5 (b'')", type: "treble" } },
+      // treble-1-4: Push: G#5 (as''), Pull: G5 (g'')
+      { push: { midi: 80, label: "G#5 (as'')", type: "treble" }, pull: { midi: 79, label: "G5 (g'')", type: "treble" } },
+      // treble-1-5: Push: D#5 (es''), Pull: D#5 (es'')
+      { push: { midi: 75, label: "D#5 (es'')", type: "treble" }, pull: { midi: 75, label: "D#5 (es'')", type: "treble" } },
+      // treble-1-6: Push: C5 (c''), Pull: C#5 (des'')
+      { push: { midi: 72, label: "C5 (c'')", type: "treble" }, pull: { midi: 73, label: "C#5 (des'')", type: "treble" } },
+      // treble-1-7: Push: G#4 (as'), Pull: A#4 (b')
+      { push: { midi: 68, label: "G#4 (as')", type: "treble" }, pull: { midi: 70, label: "A#4 (b')", type: "treble" } },
+      // treble-1-8: Push: D#4 (es'), Pull: G4 (g')
+      { push: { midi: 63, label: "D#4 (es')", type: "treble" }, pull: { midi: 67, label: "G4 (g')", type: "treble" } },
+      // treble-1-9: Push: C4 (c'), Pull: D#4 (es')
+      { push: { midi: 60, label: "C4 (c')", type: "treble" }, pull: { midi: 63, label: "D#4 (es')", type: "treble" } },
+      // treble-1-10: Push: G#3 (as), Pull: C#4 (des')
+      { push: { midi: 56, label: "G#3 (as)", type: "treble" }, pull: { midi: 61, label: "C#4 (des')", type: "treble" } },
+    ]
+  },
+  {
+    rowId: 2,
+    buttons: [
+      // treble-2-0: Push: A#6 (b'''), Pull: F6 (f''')
+      { push: { midi: 94, label: "A#6 (b''')", type: "treble" }, pull: { midi: 89, label: "F6 (f''')", type: "treble" } },
+      // treble-2-1: Push: G6 (g'''), Pull: D6 (d''')
+      { push: { midi: 91, label: "G6 (g''')", type: "treble" }, pull: { midi: 86, label: "D6 (d''')", type: "treble" } },
+      // treble-2-2: Push: D#6 (es'''), Pull: C6 (c''')
+      { push: { midi: 87, label: "D#6 (es''')", type: "treble" }, pull: { midi: 84, label: "C6 (c''')", type: "treble" } },
+      // treble-2-3: Push: A#5 (b''), Pull: G#5 (as'')
+      { push: { midi: 82, label: "A#5 (b'')", type: "treble" }, pull: { midi: 80, label: "G#5 (as'')", type: "treble" } },
+      // treble-2-4: Push: G5 (g''), Pull: F5 (f'')
+      { push: { midi: 79, label: "G5 (g'')", type: "treble" }, pull: { midi: 77, label: "F5 (f'')", type: "treble" } },
+      // treble-2-5: Push: D#5 (es''), Pull: D5 (d'')
+      { push: { midi: 75, label: "D#5 (es'')", type: "treble" }, pull: { midi: 74, label: "D5 (d'')", type: "treble" } },
+      // treble-2-6: Push: A#4 (b'), Pull: A#4 (b')
+      { push: { midi: 70, label: "A#4 (b')", type: "treble" }, pull: { midi: 70, label: "A#4 (b')", type: "treble" } },
+      // treble-2-7: Push: G4 (g'), Pull: G#4 (as')
+      { push: { midi: 67, label: "G4 (g')", type: "treble" }, pull: { midi: 68, label: "G#4 (as')", type: "treble" } },
+      // treble-2-8: Push: D#4 (es'), Pull: F4 (f')
+      { push: { midi: 63, label: "D#4 (es')", type: "treble" }, pull: { midi: 65, label: "F4 (f')", type: "treble" } },
+      // treble-2-9: Push: A#3 (b), Pull: D4 (d')
+      { push: { midi: 58, label: "A#3 (b)", type: "treble" }, pull: { midi: 62, label: "D4 (d')", type: "treble" } },
+      // treble-2-10: Push: G3 (g), Pull: A#3 (b)
+      { push: { midi: 55, label: "G3 (g)", type: "treble" }, pull: { midi: 58, label: "A#3 (b)", type: "treble" } },
+      // treble-2-11: Push: D#3 (es), Pull: G#3 (as)
+      { push: { midi: 51, label: "D#3 (es)", type: "treble" }, pull: { midi: 56, label: "G#3 (as)", type: "treble" } },
+    ]
+  },
+  {
+    rowId: 3,
+    buttons: [
+      // treble-3-0: Push: A#6 (b'''), Pull: D#6 (es''')
+      { push: { midi: 94, label: "A#6 (b''')", type: "treble" }, pull: { midi: 87, label: "D#6 (es''')", type: "treble" } },
+      // treble-3-1: Push: F6 (f'''), Pull: C6 (c''')
+      { push: { midi: 89, label: "F6 (f''')", type: "treble" }, pull: { midi: 84, label: "C6 (c''')", type: "treble" } },
+      // treble-3-2: Push: D6 (d'''), Pull: A5 (a'')
+      { push: { midi: 86, label: "D6 (d''')", type: "treble" }, pull: { midi: 81, label: "A5 (a'')", type: "treble" } },
+      // treble-3-3: Push: A#5 (b''), Pull: G5 (g'')
+      { push: { midi: 82, label: "A#5 (b'')", type: "treble" }, pull: { midi: 79, label: "G5 (g'')", type: "treble" } },
+      // treble-3-4: Push: F5 (f''), Pull: D#5 (es'')
+      { push: { midi: 77, label: "F5 (f'')", type: "treble" }, pull: { midi: 75, label: "D#5 (es'')", type: "treble" } },
+      // treble-3-5: Push: D5 (d''), Pull: C5 (c'')
+      { push: { midi: 74, label: "D5 (d'')", type: "treble" }, pull: { midi: 72, label: "C5 (c'')", type: "treble" } },
+      // treble-3-6: Push: A#4 (b'), Pull: A4 (a')
+      { push: { midi: 70, label: "A#4 (b')", type: "treble" }, pull: { midi: 69, label: "A4 (a')", type: "treble" } },
+      // treble-3-7: Push: F4 (f'), Pull: G4 (g')
+      { push: { midi: 65, label: "F4 (f')", type: "treble" }, pull: { midi: 67, label: "G4 (g')", type: "treble" } },
+      // treble-3-8: Push: D4 (d'), Pull: D#4 (es')
+      { push: { midi: 62, label: "D4 (d')", type: "treble" }, pull: { midi: 63, label: "D#4 (es')", type: "treble" } },
+      // treble-3-9: Push: A#3 (b), Pull: C4 (c')
+      { push: { midi: 58, label: "A#3 (b)", type: "treble" }, pull: { midi: 60, label: "C4 (c')", type: "treble" } },
+      // treble-3-10: Push: F3 (f), Pull: A3 (a)
+      { push: { midi: 53, label: "F3 (f)", type: "treble" }, pull: { midi: 57, label: "A3 (a)", type: "treble" } },
+      // treble-3-11: Push: D3 (d), Pull: F3 (f)
+      { push: { midi: 50, label: "D3 (d)", type: "treble" }, pull: { midi: 53, label: "F3 (f)", type: "treble" } },
+      // treble-3-12: Push: A#2 (B), Pull: D#3 (es)
+      { push: { midi: 46, label: "A#2 (B)", type: "treble" }, pull: { midi: 51, label: "D#3 (es)", type: "treble" } },
+    ]
+  }
+];
+```
+
+helpers/appConfig.ts:1-(26)
+```
+// file: helpers/appConfig.ts
+import { SoundSettings } from '../types';
+
+export const STORAGE_KEY_LAYOUT = 'steirische_layout_v1';
+export const STORAGE_KEY_SOUND = 'steirische_sound_v1';
+export const FILENAME = 'accordion_line_drawing.jpg';
+
+// Paths to try sequentially if one fails
+export const CANDIDATE_PATHS = [
+  `assets/${FILENAME}`,      // Standard relative
+  `./assets/${FILENAME}`,    // Explicit relative
+  `/assets/${FILENAME}`,     // Absolute from root
+  `${FILENAME}`,             // Root (if flattened)
+  `/${FILENAME}`,            // Absolute root
+  `../assets/${FILENAME}`    // Parent relative
+];
+
+export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
+  musetteDetune: 14, reedAttackTime: 0.03, reedReleaseTime: 0.15, pitchInstability: 2, bellowsPitchBend: 0,
+  harmonicBrightness: 1.0, bassGrowl: 1.0, reedStiffness: 1.0, trebleOctaveBalance: 0.5, bassOctaveBalance: 0.5,
+  airNoiseLevel: 0.03, airTurbulence: 0.5, bellowsShakeSpeed: 5, bellowsShakeDepth: 0, dynamicRange: 1.0, pushPullVariance: 0,
+  buttonClickVolume: 0.4, palletThudVolume: 0.3, mechanismNoiseRandomness: 0.2, bassButtonClunk: 0.5,
+  boxResonanceFreq: 400, boxResonanceAmount: 4, grilleFilterCutoff: 5000, cassottoEffect: 0, bassChamberResonance: 2,
+  tubeSaturation: 0, inputGain: 0.5, trebleStereoWidth: 0.3, bassStereoWidth: 0.1, reverbSize: 1.5, reverbMix: 0.1,
+  eqLow: 0, eqMid: 0, eqHigh: 0, masterVolume: 0.4
+};
+```
+
+helpers/layout.json:1-(246)
+```
+{
+  "bass-0-0": {
+    "left": 12.42,
+    "top": 23.59
+  },
+  "bass-0-1": {
+    "left": 12.51,
+    "top": 30.31
+  },
+  "bass-0-2": {
+    "left": 12.163194444444445,
+    "top": 37.13851851851852
+  },
+  "bass-0-3": {
+    "left": 12.25,
+    "top": 43.62
+  },
+  "bass-0-4": {
+    "left": 12.07,
+    "top": 51.37
+  },
+  "bass-0-5": {
+    "left": 12.25,
+    "top": 57.62
+  },
+  "bass-0-6": {
+    "left": 12.33,
+    "top": 63.99
+  },
+  "bass-0-7": {
+    "left": 12.676805555555555,
+    "top": 70.69851851851851
+  },
+  "bass-1-0": {
+    "left": 16.583194444444445,
+    "top": 26.36574074074074
+  },
+  "bass-1-1": {
+    "left": 16.586805555555557,
+    "top": 33.66
+  },
+  "bass-1-2": {
+    "left": 16.59,
+    "top": 40.72
+  },
+  "bass-1-3": {
+    "left": 16.59,
+    "top": 46.97574074074074
+  },
+  "bass-1-4": {
+    "left": 16.85,
+    "top": 53.45
+  },
+  "bass-1-5": {
+    "left": 16.413194444444443,
+    "top": 61.09425925925926
+  },
+  "bass-1-6": {
+    "left": 16.323194444444443,
+    "top": 66.99574074074074
+  },
+  "treble-0-0": {
+    "left": 78.82361111111112,
+    "top": 25.332962962962963
+  },
+  "treble-0-1": {
+    "left": 79,
+    "top": 30.537222222222223
+  },
+  "treble-0-2": {
+    "left": 79.17319444444445,
+    "top": 36.09722222222222
+  },
+  "treble-0-3": {
+    "left": 78.91319444444444,
+    "top": 41.297222222222224
+  },
+  "treble-0-4": {
+    "left": 79.07986111111111,
+    "top": 46.99074074074074
+  },
+  "treble-0-5": {
+    "left": 79.17,
+    "top": 52.41
+  },
+  "treble-0-6": {
+    "left": 79.16666666666666,
+    "top": 57.98611111111111
+  },
+  "treble-0-7": {
+    "left": 79.17361111111111,
+    "top": 63.64148148148148
+  },
+  "treble-0-8": {
+    "left": 79.26,
+    "top": 69.07574074074074
+  },
+  "treble-0-9": {
+    "left": 79.17722222222223,
+    "top": 74.63296296296299
+  },
+  "treble-1-0": {
+    "left": 81.68402777777779,
+    "top": 22.916666666666664
+  },
+  "treble-1-1": {
+    "left": 81.87,
+    "top": 28.22
+  },
+  "treble-1-2": {
+    "left": 82.04,
+    "top": 33.42574074074074
+  },
+  "treble-1-3": {
+    "left": 82.04,
+    "top": 38.87
+  },
+  "treble-1-4": {
+    "left": 82.04,
+    "top": 44.66148148148148
+  },
+  "treble-1-5": {
+    "left": 82.03680555555556,
+    "top": 50.09722222222222
+  },
+  "treble-1-6": {
+    "left": 82.04319444444444,
+    "top": 55.54148148148148
+  },
+  "treble-1-7": {
+    "left": 82.04,
+    "top": 61.09148148148148
+  },
+  "treble-1-8": {
+    "left": 82.04,
+    "top": 66.53722222222224
+  },
+  "treble-1-9": {
+    "left": 82.04319444444444,
+    "top": 72.31574074074075
+  },
+  "treble-1-10": {
+    "left": 82.12680555555556,
+    "top": 77.76296296296299
+  },
+  "treble-2-0": {
+    "left": 84.47361111111111,
+    "top": 20.581481481481482
+  },
+  "treble-2-1": {
+    "left": 84.55361111111111,
+    "top": 26.02574074074074
+  },
+  "treble-2-2": {
+    "left": 84.64680555555556,
+    "top": 31.23574074074074
+  },
+  "treble-2-3": {
+    "left": 84.81680555555556,
+    "top": 36.67
+  },
+  "treble-2-4": {
+    "left": 84.82,
+    "top": 42.11
+  },
+  "treble-2-5": {
+    "left": 84.90680555555555,
+    "top": 47.67148148148148
+  },
+  "treble-2-6": {
+    "left": 84.80902777777779,
+    "top": 53.12500000000001
+  },
+  "treble-2-7": {
+    "left": 84.99,
+    "top": 58.43
+  },
+  "treble-2-8": {
+    "left": 84.98680555555556,
+    "top": 64.10574074074074
+  },
+  "treble-2-9": {
+    "left": 84.99361111111111,
+    "top": 69.53722222222224
+  },
+  "treble-2-10": {
+    "left": 84.99,
+    "top": 75.1
+  },
+  "treble-2-11": {
+    "left": 84.99361111111111,
+    "top": 80.77
+  },
+  "treble-3-0": {
+    "left": 87.68,
+    "top": 18.15722222222222
+  },
+  "treble-3-1": {
+    "left": 87.68,
+    "top": 23.36
+  },
+  "treble-3-2": {
+    "left": 87.68,
+    "top": 28.92
+  },
+  "treble-3-3": {
+    "left": 87.77,
+    "top": 34.36
+  },
+  "treble-3-4": {
+    "left": 87.94361111111111,
+    "top": 39.56574074074074
+  },
+  "treble-3-5": {
+    "left": 87.94,
+    "top": 45.23148148148148
+  },
+  "treble-3-6": {
+    "left": 88.03,
+    "top": 50.55722222222222
+  },
+  "treble-3-7": {
+    "left": 88.20319444444445,
+    "top": 55.99574074074074
+  },
+  "treble-3-8": {
+    "left": 88.2,
+    "top": 61.67425925925926
+  },
+  "treble-3-9": {
+    "left": 88.2,
+    "top": 66.99296296296299
+  },
+  "treble-3-10": {
+    "left": 88.28124999999999,
+    "top": 72.5694444444445
+  },
+  "treble-3-11": {
+    "left": 88.10763888888889,
+    "top": 78.35648148148148
+  },
+  "treble-3-12": {
+    "left": 88.10763888888889,
+    "top": 83.77700558415162
+  }
+}
+```
+
+helpers/layoutGenerator.ts:1-(9)
+```
+// file: helpers/layoutGenerator.ts
+import { LayoutMap } from '../types';
+import defaultLayoutJson from './layout.json';
+
+// Load layout from the JSON file instead of hardcoding
+export const generateDefaultLayout = (): LayoutMap => {
+  // Cast to LayoutMap to ensure type safety, though JSON import is usually 'any' or inferred
+  return defaultLayoutJson as LayoutMap;
+};
+```
+
+helpers/midiMap.ts:1-(49)
+```
+import { BASS_ROWS, TREBLE_ROWS } from '../constants';
+import { Direction } from '../types';
+
+// Change: Map to string[] instead of string
+type NoteMap = Map<number, string[]>; 
+
+let pushMap: NoteMap | null = null;
+let pullMap: NoteMap | null = null;
+
+export const getButtonIdsForNote = (midi: number, direction: Direction): string[] => {
+  if (!pushMap || !pullMap) buildMaps();
+  
+  const map = direction === Direction.PUSH ? pushMap : pullMap;
+  return map?.get(midi) || [];
+};
+
+// Keep the singular version for backward compatibility if needed, or just use the first one
+export const getButtonIdForNote = (midi: number, direction: Direction): string | undefined => {
+  const ids = getButtonIdsForNote(midi, direction);
+  return ids.length > 0 ? ids[0] : undefined;
+};
+
+const buildMaps = () => {
+  pushMap = new Map();
+  pullMap = new Map();
+
+  const processRows = (rows: any[], prefix: string) => {
+    rows.forEach((row, rIdx) => {
+      row.buttons.forEach((btn: any, bIdx: number) => {
+        const id = `${prefix}-${rIdx}-${bIdx}`;
+        
+        // Map Push
+        if (!pushMap!.has(btn.push.midi)) {
+          pushMap!.set(btn.push.midi, []);
+        }
+        pushMap!.get(btn.push.midi)!.push(id);
+
+        // Map Pull
+        if (!pullMap!.has(btn.pull.midi)) {
+          pullMap!.set(btn.pull.midi, []);
+        }
+        pullMap!.get(btn.pull.midi)!.push(id);
+      });
+    });
+  };
+
+  processRows(BASS_ROWS, 'bass');
+  processRows(TREBLE_ROWS, 'treble');
+};
+```
+
+helpers/projectStorage.ts:1-(56)
+```
+import { MidiProject } from '../types';
+
+const STORAGE_PREFIX = 'steirische_proj_';
+const INDEX_KEY = 'steirische_proj_index';
+
+export const getProjectList = (): { id: string; name: string; lastModified: number }[] => {
+  try {
+    const index = localStorage.getItem(INDEX_KEY);
+    return index ? JSON.parse(index) : [];
+  } catch (e) {
+    console.error("Failed to load project index", e);
+    return [];
+  }
+};
+
+export const loadProject = (id: string): MidiProject | null => {
+  try {
+    const data = localStorage.getItem(STORAGE_PREFIX + id);
+    return data ? JSON.parse(data) : null;
+  } catch (e) {
+    console.error("Failed to load project", id, e);
+    return null;
+  }
+};
+
+export const saveProject = (project: MidiProject): void => {
+  try {
+    // 1. Save Project Data
+    localStorage.setItem(STORAGE_PREFIX + project.id, JSON.stringify(project));
+
+    // 2. Update Index
+    const list = getProjectList();
+    const existingIdx = list.findIndex(p => p.id === project.id);
+    const meta = { id: project.id, name: project.name, lastModified: project.lastModified };
+    
+    if (existingIdx >= 0) {
+      list[existingIdx] = meta;
+    } else {
+      list.push(meta);
+    }
+    localStorage.setItem(INDEX_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error("Failed to save project", e);
+    alert("Storage full or error saving project.");
+  }
+};
+
+export const deleteProject = (id: string): void => {
+  try {
+    localStorage.removeItem(STORAGE_PREFIX + id);
+    const list = getProjectList().filter(p => p.id !== id);
+    localStorage.setItem(INDEX_KEY, JSON.stringify(list));
+  } catch (e) {
+    console.error("Failed to delete project", e);
+  }
+};
+```
+
+hooks/useAudioController.ts:1-(99)
+```
+import { useState, useEffect } from 'react';
+import { Direction, NoteDefinition } from '../types';
+import { audioService } from '../services/audioService';
+import { analyzeChord } from '../services/geminiService';
+
+export const useAudioController = (isEditing: boolean) => {
+  const [direction, setDirection] = useState<Direction>(Direction.PUSH);
+  const [activeNotes, setActiveNotes] = useState<Set<string>>(new Set());
+  
+  // AI State
+  const [isAiEnabled, setIsAiEnabled] = useState(false);
+  const [chordName, setChordName] = useState<string>('');
+  const [chordDesc, setChordDesc] = useState<string>('AI analysis is disabled');
+
+  const handleNoteStart = (
+    id: string,
+    noteDef: NoteDefinition,
+    type: 'bass' | 'chord' | 'treble',
+    chordType?: any,
+    newDirection?: Direction,
+    options?: { silent?: boolean; duration?: number }
+  ) => {
+    if (isEditing) return;
+    
+    if (newDirection) {
+      setDirection(newDirection);
+    }
+
+    // Only play audio if not silent
+    if (!options?.silent) {
+      audioService.playNote(id, noteDef.midi, type, chordType, newDirection || direction, { duration: options?.duration });
+    }
+    
+    setActiveNotes(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  };
+
+  const handleNoteStop = (id: string) => {
+    audioService.stopNote(id);
+    setActiveNotes(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  const stopAllNotes = () => {
+    audioService.stopAll();
+    setActiveNotes(new Set());
+  };
+
+  // AI Analysis Effect
+  useEffect(() => {
+    if (!isAiEnabled) {
+      setChordName('');
+      setChordDesc('AI analysis is disabled');
+      return;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      if (activeNotes.size > 0 && !isEditing) {
+        const currentNoteIds = Array.from(activeNotes);
+        const notesList = currentNoteIds.map(id => (id as string).includes('bass') ? 'Bass/Chord' : 'Melody');
+        
+        if (notesList.length > 0) {
+            try {
+                setChordDesc('Analyzing...');
+                const analysis = await analyzeChord(notesList, direction);
+                setChordName(analysis.chordName);
+                setChordDesc(analysis.description);
+            } catch (err) {
+                console.error("Analysis failed", err);
+                setChordDesc('Analysis error (check API key)');
+            }
+        }
+      } else if (activeNotes.size === 0) {
+        setChordName('');
+        setChordDesc('Play notes to analyze...');
+      }
+    }, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [activeNotes, isEditing, direction, isAiEnabled]);
+
+  return {
+    direction,
+    setDirection,
+    activeNotes,
+    isAiEnabled,
+    setIsAiEnabled,
+    chordName,
+    chordDesc,
+    handleNoteStart,
+    handleNoteStop,
+    stopAllNotes // Added this export
+  };
+};
+```
+
+hooks/useBackgroundImage.ts:1-(42)
+```
+import React, { useState } from 'react';
+import { CANDIDATE_PATHS } from '../helpers/appConfig';
+
+export const useBackgroundImage = () => {
+  const [bgImageSrc, setBgImageSrc] = useState<string>(CANDIDATE_PATHS[0]);
+  const [pathIndex, setPathIndex] = useState(0);
+  const [bgStatus, setBgStatus] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [manualPath, setManualPath] = useState('');
+
+  const handleImgError = () => {
+    const nextIndex = pathIndex + 1;
+    if (nextIndex < CANDIDATE_PATHS.length) {
+      setPathIndex(nextIndex);
+      setBgImageSrc(CANDIDATE_PATHS[nextIndex]);
+    } else {
+      setBgStatus('error');
+    }
+  };
+
+  const handleImgLoad = () => {
+    setBgStatus('loaded');
+  };
+
+  const applyManualPath = (e: React.FormEvent) => {
+    e.preventDefault();
+    if(manualPath.trim()) {
+        setBgImageSrc(manualPath);
+        setBgStatus('loading');
+        setPathIndex(-1); 
+    }
+  };
+
+  return {
+    bgImageSrc,
+    bgStatus,
+    manualPath,
+    setManualPath,
+    handleImgError,
+    handleImgLoad,
+    applyManualPath
+  };
+};
+```
+
+hooks/useLayoutEditor.ts:1-(178)
+```
+import React, { useState, useEffect, useCallback, RefObject } from 'react';
+import { LayoutMap } from '../types';
+import { STORAGE_KEY_LAYOUT } from '../helpers/appConfig';
+import { generateDefaultLayout } from '../helpers/layoutGenerator';
+
+export const useLayoutEditor = (containerRef: RefObject<HTMLDivElement>) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [layout, setLayout] = useState<LayoutMap>({});
+  const [selectedButtonId, setSelectedButtonId] = useState<string | null>(null);
+  const [dragTarget, setDragTarget] = useState<string | null>(null);
+
+  // Initialize Layout
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY_LAYOUT);
+    if (saved) {
+      try {
+        setLayout(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse saved layout, reverting to default.");
+        setLayout(generateDefaultLayout());
+      }
+    } else {
+      setLayout(generateDefaultLayout());
+    }
+  }, []);
+
+  // Drag Handlers
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
+    if (!isEditing || !containerRef.current) return;
+    setSelectedButtonId(id);
+    setDragTarget(id);
+  };
+
+  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!isEditing || !dragTarget || !containerRef.current) return;
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const rect = containerRef.current.getBoundingClientRect();
+    
+    let left = ((clientX - rect.left) / rect.width) * 100;
+    let top = ((clientY - rect.top) / rect.height) * 100;
+
+    left = Math.max(0, Math.min(100, left));
+    top = Math.max(0, Math.min(100, top));
+
+    setLayout(prev => ({
+      ...prev,
+      [dragTarget]: { left, top }
+    }));
+  }, [isEditing, dragTarget, containerRef]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragTarget(null);
+  }, []);
+
+  // Global Drag Listeners
+  useEffect(() => {
+    if (isEditing) {
+      window.addEventListener('mousemove', handleDragMove);
+      window.addEventListener('mouseup', handleDragEnd);
+      window.addEventListener('touchmove', handleDragMove, { passive: false });
+      window.addEventListener('touchend', handleDragEnd);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleDragMove);
+      window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('touchmove', handleDragMove);
+      window.removeEventListener('touchend', handleDragEnd);
+    };
+  }, [isEditing, handleDragMove, handleDragEnd]);
+
+  // Keyboard Nudge Logic
+  useEffect(() => {
+    if (!isEditing || !selectedButtonId || !containerRef.current) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        setSelectedButtonId(null);
+        return;
+      }
+
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+        e.preventDefault();
+        
+        const rect = containerRef.current!.getBoundingClientRect();
+        const pixelStep = e.shiftKey ? 10 : 1;
+        
+        const stepX = (pixelStep / rect.width) * 100;
+        const stepY = (pixelStep / rect.height) * 100;
+
+        setLayout(prev => {
+          const current = prev[selectedButtonId] || { left: 50, top: 50 };
+          let newLeft = current.left;
+          let newTop = current.top;
+
+          switch (e.key) {
+            case 'ArrowLeft': newLeft -= stepX; break;
+            case 'ArrowRight': newLeft += stepX; break;
+            case 'ArrowUp': newTop -= stepY; break;
+            case 'ArrowDown': newTop += stepY; break;
+          }
+
+          return {
+            ...prev,
+            [selectedButtonId]: { left: newLeft, top: newTop }
+          };
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isEditing, selectedButtonId, containerRef]);
+
+  // Persistence & IO
+  const saveLayout = () => {
+    localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(layout));
+    setIsEditing(false);
+    setSelectedButtonId(null);
+  };
+
+  const resetLayout = () => {
+    if (confirm("Are you sure you want to reset the layout?")) {
+      const def = generateDefaultLayout();
+      setLayout(def);
+      localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(def));
+    }
+  };
+
+  const handleImportLayout = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        if (typeof json === 'object' && json !== null) {
+          setLayout(json);
+          localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(json));
+          alert("Layout imported successfully!");
+        } else {
+          alert("Invalid JSON file.");
+        }
+      } catch (err) {
+        console.error("Import error:", err);
+        alert("Error reading file.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleExportLayout = () => {
+    const dataStr = JSON.stringify(layout, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'layout.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  return {
+    layout,
+    isEditing,
+    setIsEditing,
+    selectedButtonId,
+    setSelectedButtonId,
+    dragTarget,
+    handleDragStart,
+    saveLayout,
+    resetLayout,
+    handleImportLayout,
+    handleExportLayout
+  };
+};
+```
+
+hooks/useMidiPlayer.ts:1-(669)
+```
+import { useState, useEffect, useRef } from 'react';
+import { Midi } from '@tonejs/midi';
+import { Direction, MidiProject, SavedDirectionEvent } from '../types';
+import { getButtonIdForNote, getButtonIdsForNote } from '../helpers/midiMap';
+import { BASS_ROWS } from '../constants';
+
+export type ChannelMode = 'both' | 'bass' | 'treble' | 'muted';
+
+export interface MidiNote {
+  midi: number;
+  time: number;
+  duration: number;
+  velocity: number;
+  channel: number;
+  name: string;
+}
+
+interface MidiEvent {
+  time: number;
+  type: 'noteOn' | 'noteOff' | 'direction';
+  midi?: number;
+  velocity?: number;
+  direction?: Direction;
+  id?: string;
+  noteType?: 'bass' | 'chord' | 'treble';
+  channel?: number;
+}
+
+export interface DirectionEvent {
+  time: number;
+  direction: Direction;
+}
+
+export const useMidiPlayer = (
+  audioController: any
+) => {
+  // --- State ---
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [bpm, setBpm] = useState(120);
+  const [originalBpm, setOriginalBpm] = useState(120);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [totalTime, setTotalTime] = useState(0);
+  const [fileName, setFileName] = useState<string | null>(null);
+
+  const [availableChannels, setAvailableChannels] = useState<number[]>([]);
+  const [channelModes, setChannelModes] = useState<Record<number, ChannelMode>>({});
+  const [allNotes, setAllNotes] = useState<MidiNote[]>([]);
+  
+  // New: Direction Events & Octave Shift
+  const [directionEvents, setDirectionEvents] = useState<DirectionEvent[]>([]);
+  const [octaveShift, setOctaveShiftState] = useState(0);
+  const [isScrubbingSoundEnabled, setIsScrubbingSoundEnabled] = useState(false);
+  
+  // Project Storage State
+  const [rawMidiBase64, setRawMidiBase64] = useState<string | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+
+  // New: Fingering Override State
+  const [fingeringOverrides, setFingeringOverrides] = useState<Record<string, string>>({});
+  const [alternativeButtons, setAlternativeButtons] = useState<Set<string>>(new Set());
+
+  // --- Refs ---
+  const eventQueue = useRef<MidiEvent[]>([]);
+  const eventIndex = useRef(0);
+  const startTimeRef = useRef(0);
+  const pausedTimeRef = useRef(0);
+  const animationFrameRef = useRef<number>();
+  const directionRef = useRef<Direction>(Direction.PUSH);
+  // Store btnId AND channel to allow re-triggering on direction change
+  const activeMidiMapping = useRef<Map<number, { btnId: string, channel: number }>>(new Map());
+  const octaveShiftRef = useRef(0);
+  const activeScrubbingNotes = useRef<Set<string>>(new Set());
+
+  // --- Helpers ---
+
+  // Helper to generate unique key for a note event
+  const getNoteKey = (midi: number, time: number, channel: number) => {
+    return `${midi}-${time.toFixed(3)}-${channel}`;
+  };
+
+  const setFingeringOverride = (midi: number, time: number, channel: number, btnId: string) => {
+    const key = getNoteKey(midi, time, channel);
+    setFingeringOverrides(prev => ({ ...prev, [key]: btnId }));
+    
+    // Immediate visual update if paused
+    if (!isPlaying) {
+      // Re-run sync to reflect change immediately
+      setTimeout(() => seek(currentTime), 0);
+    }
+  };
+
+  const setOctaveShift = (val: number) => {
+    setOctaveShiftState(val);
+    octaveShiftRef.current = val;
+    activeScrubbingNotes.current.clear(); // Fix desync
+    audioController.stopAllNotes();
+  };
+
+  const cycleChannelMode = (channel: number) => {
+    setChannelModes(prev => {
+      const current = prev[channel] || 'muted';
+      let next: ChannelMode = 'both';
+      if (current === 'both') next = 'bass';
+      else if (current === 'bass') next = 'treble';
+      else if (current === 'treble') next = 'muted';
+      else next = 'both';
+
+      activeScrubbingNotes.current.clear(); // Fix desync
+      audioController.stopAllNotes();
+      return { ...prev, [channel]: next };
+    });
+  };
+
+  const updateDirections = (updates: { time: number, direction: Direction }[]) => {
+    // 1. Update State
+    setDirectionEvents(prev => {
+      const newEvents = [...prev];
+      updates.forEach(update => {
+        const idx = newEvents.findIndex(e => Math.abs(e.time - update.time) < 0.001);
+        if (idx >= 0) newEvents.splice(idx, 1);
+        newEvents.push(update);
+      });
+      return newEvents.sort((a, b) => a.time - b.time);
+    });
+
+    // 2. Update Event Queue
+    const currentQueue = eventQueue.current;
+    const filteredQueue = currentQueue.filter(e => {
+      if (e.type !== 'direction') return true;
+      return !updates.some(u => Math.abs(u.time - e.time) < 0.001);
+    });
+
+    updates.forEach(u => {
+      filteredQueue.push({ time: u.time, type: 'direction', direction: u.direction });
+    });
+
+    filteredQueue.sort((a, b) => {
+      if (a.time !== b.time) return a.time - b.time;
+      if (a.type === 'direction' && b.type !== 'direction') return -1;
+      if (a.type !== 'direction' && b.type === 'direction') return 1;
+      return 0;
+    });
+
+    eventQueue.current = filteredQueue;
+  };
+
+  const loadMidiFile = async (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string') {
+        // result is DataURL: "data:audio/midi;base64,..."
+        const base64 = result.split(',')[1];
+        setRawMidiBase64(base64);
+        
+        // Decode for Tone.js
+        const binaryString = atob(base64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        await parseAndLoadMidi(bytes.buffer, file.name);
+        setCurrentProjectId(null); // New file = new project context
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const parseAndLoadMidi = async (buffer: ArrayBuffer, name: string) => {
+    const midi = new Midi(buffer);
+    setFileName(name);
+    
+    if (midi.header.tempos.length > 0) {
+      setOriginalBpm(Math.round(midi.header.tempos[0].bpm));
+      setBpm(Math.round(midi.header.tempos[0].bpm));
+    }
+    setTotalTime(midi.duration);
+
+    const events: MidiEvent[] = [];
+    const foundChannels = new Set<number>();
+    const initialDirEvents: DirectionEvent[] = [];
+
+    midi.tracks.forEach(track => {
+      foundChannels.add(track.channel);
+      track.notes.forEach(note => {
+        events.push({ time: note.time, type: 'noteOn', midi: note.midi, velocity: note.velocity, channel: track.channel });
+        events.push({ time: note.time + note.duration, type: 'noteOff', midi: note.midi, channel: track.channel });
+      });
+      // @ts-ignore
+      const trackEvents = track.events || [];
+      trackEvents.forEach((e: any) => {
+          if (e.type === 'text' || e.type === 'meta') {
+              const text = (e.text || '').toUpperCase();
+              if (text.includes('PUSH')) {
+                  events.push({ time: e.time, type: 'direction', direction: Direction.PUSH });
+                  initialDirEvents.push({ time: e.time, direction: Direction.PUSH });
+              } else if (text.includes('PULL')) {
+                  events.push({ time: e.time, type: 'direction', direction: Direction.PULL });
+                  initialDirEvents.push({ time: e.time, direction: Direction.PULL });
+              }
+          }
+      });
+    });
+
+    const parsedNotes: MidiNote[] = [];
+    midi.tracks.forEach(track => {
+      track.notes.forEach(note => {
+        parsedNotes.push({
+          midi: note.midi,
+          time: note.time,
+          duration: note.duration,
+          velocity: note.velocity,
+          channel: track.channel,
+          name: note.name
+        });
+      });
+    });
+    parsedNotes.sort((a, b) => a.time - b.time);
+    setAllNotes(parsedNotes);
+    setDirectionEvents(initialDirEvents.sort((a, b) => a.time - b.time));
+
+    setAvailableChannels(Array.from(foundChannels).sort((a, b) => a - b));
+    const initialModes: Record<number, ChannelMode> = {};
+    foundChannels.forEach(ch => { initialModes[ch] = 'both'; });
+    setChannelModes(initialModes);
+
+    events.sort((a, b) => {
+      if (a.time !== b.time) return a.time - b.time;
+      if (a.type === 'direction' && b.type !== 'direction') return -1;
+      if (a.type !== 'direction' && b.type === 'direction') return 1;
+      return 0;
+    });
+    
+    eventQueue.current = events;
+    resetPlayer();
+  };
+
+  const resetPlayer = () => {
+    setIsPlaying(false);
+    setCurrentTime(0);
+    eventIndex.current = 0;
+    pausedTimeRef.current = 0;
+    directionRef.current = Direction.PUSH;
+    activeMidiMapping.current.clear();
+    activeScrubbingNotes.current.clear();
+    audioController.stopAllNotes();
+  };
+
+  const togglePlay = () => {
+    if (isPlaying) {
+      setIsPlaying(false);
+      pausedTimeRef.current = currentTime;
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      audioController.stopAllNotes();
+    } else {
+      setIsPlaying(true);
+      directionRef.current = audioController.direction; 
+      startTimeRef.current = performance.now() - (pausedTimeRef.current * 1000 * (originalBpm / bpm));
+      loop();
+    }
+  };
+
+  // --- Smart Fingering Solver ---
+  const solveAndPlayBatch = (events: MidiEvent[]) => {
+    const currentDir = directionRef.current;
+    // Extract btnIds from the mapping objects
+    const activeIds = Array.from(activeMidiMapping.current.values()).map((v: { btnId: string, channel: number }) => v.btnId);
+    
+    // 1. Prepare Candidates
+    const notesToSolve: { event: MidiEvent, candidates: string[] }[] = [];
+    
+    events.forEach(e => {
+       const mode = e.channel !== undefined ? (channelModes[e.channel] || 'muted') : 'both';
+       if (mode === 'muted') return;
+       
+       const shiftedMidi = e.midi! + (octaveShiftRef.current * 12);
+       
+       // Check Override
+       const key = getNoteKey(e.midi!, e.time, e.channel || 0);
+       const overrideId = fingeringOverrides[key];
+
+       let validIds: string[] = [];
+
+       if (overrideId) {
+         // If override exists, force it as the only candidate
+         validIds = [overrideId];
+       } else {
+         const allIds = getButtonIdsForNote(shiftedMidi, currentDir);
+         validIds = allIds.filter(id => {
+            const isBass = id.startsWith('bass');
+            if (mode === 'bass' && !isBass) return false;
+            if (mode === 'treble' && isBass) return false;
+            return true;
+         });
+       }
+       
+       if (validIds.length > 0) {
+          notesToSolve.push({ event: e, candidates: validIds });
+       }
+    });
+
+    if (notesToSolve.length === 0) return;
+
+    // 2. Solver (Minimize Distance)
+    let bestCost = Infinity;
+    let bestAssignment: string[] = [];
+
+    const getCost = (id1: string, id2: string) => {
+        const p1 = id1.split('-');
+        const p2 = id2.split('-');
+        // type-row-col
+        if (p1[0] !== p2[0]) return 100; // Different hands (infinite distance)
+        const r1 = parseInt(p1[1]), c1 = parseInt(p1[2]);
+        const r2 = parseInt(p2[1]), c2 = parseInt(p2[2]);
+        // Heuristic: Row changes are "expensive" (4x), column changes are "cheap" (1x)
+        return Math.abs(c1 - c2) + Math.abs(r1 - r2) * 4;
+    };
+
+    const search = (idx: number, current: string[]) => {
+        if (idx === notesToSolve.length) {
+            let cost = 0;
+            // Internal spread (pairwise among new notes)
+            for (let i = 0; i < current.length; i++) {
+                for (let j = i + 1; j < current.length; j++) {
+                    cost += getCost(current[i], current[j]);
+                }
+            }
+            // Distance to existing hand position (active notes)
+            for (let i = 0; i < current.length; i++) {
+                for (const active of activeIds) {
+                    cost += getCost(current[i], active);
+                }
+            }
+            
+            if (cost < bestCost) {
+                bestCost = cost;
+                bestAssignment = [...current];
+            }
+            return;
+        }
+
+        const candidates = notesToSolve[idx].candidates;
+        for (const cand of candidates) {
+            current.push(cand);
+            search(idx + 1, current);
+            current.pop();
+        }
+    };
+
+    search(0, []);
+
+    // 3. Play Selected Buttons
+    bestAssignment.forEach((btnId, idx) => {
+        const event = notesToSolve[idx].event;
+        const shiftedMidi = event.midi! + (octaveShiftRef.current * 12);
+        
+        // Store btnId AND channel
+        activeMidiMapping.current.set(event.midi!, { btnId, channel: event.channel || 0 });
+        
+        const isBassRow = btnId.startsWith('bass');
+        let type: 'bass' | 'chord' | 'treble' = 'treble';
+        let chordType = undefined;
+        
+        if (isBassRow) {
+             const [_, rStr, bStr] = btnId.split('-');
+             const r = parseInt(rStr);
+             const b = parseInt(bStr);
+             const def = BASS_ROWS.find(row => row.rowId === r)?.buttons[b];
+             if (def) {
+                 const noteDef = currentDir === Direction.PUSH ? def.push : def.pull;
+                 type = noteDef.type as any;
+                 chordType = noteDef.chordType;
+             }
+        }
+        
+        audioController.handleNoteStart(btnId, { midi: shiftedMidi, label: 'MIDI' }, type, chordType, currentDir);
+    });
+  };
+
+  const loop = () => {
+    const now = performance.now();
+    const rawElapsed = (now - startTimeRef.current) / 1000;
+    const speedRatio = bpm / originalBpm;
+    const scaledTime = rawElapsed * speedRatio;
+
+    setCurrentTime(scaledTime);
+
+    const batch: MidiEvent[] = [];
+
+    const flushBatch = () => {
+      if (batch.length === 0) return;
+      solveAndPlayBatch(batch);
+      batch.length = 0;
+    };
+
+    while (eventIndex.current < eventQueue.current.length) {
+      const event = eventQueue.current[eventIndex.current];
+      if (event.time > scaledTime) break;
+
+      if (event.type === 'noteOn') {
+        batch.push(event);
+      } else {
+        // Flush pending notes before changing direction or stopping notes
+        flushBatch();
+        processEvent(event);
+      }
+      eventIndex.current++;
+    }
+    flushBatch();
+
+    if (scaledTime >= totalTime) {
+      setIsPlaying(false);
+      return;
+    }
+
+    if (isPlaying) {
+       animationFrameRef.current = requestAnimationFrame(loop);
+    }
+  };
+
+  useEffect(() => {
+    if (isPlaying) {
+      animationFrameRef.current = requestAnimationFrame(loop);
+    }
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    };
+  }, [isPlaying, bpm]);
+
+  const processEvent = (event: MidiEvent) => {
+    // NoteOn is now handled by solveAndPlayBatch in the loop
+    
+    if (event.type === 'direction' && event.direction) {
+      const newDir = event.direction;
+      if (directionRef.current !== newDir) {
+          // 1. Capture currently playing notes
+          const activeNotesData = Array.from(activeMidiMapping.current.entries());
+          
+          // 2. Stop everything physically
+          audioController.stopAllNotes();
+          activeMidiMapping.current.clear();
+          
+          // 3. Update Direction
+          audioController.setDirection(newDir);
+          directionRef.current = newDir;
+          
+          // 4. Re-trigger notes in new direction (if they exist)
+          if (activeNotesData.length > 0) {
+              const syntheticEvents: MidiEvent[] = activeNotesData.map(([midi, data]) => ({
+                  time: currentTime,
+                  type: 'noteOn',
+                  midi: midi,
+                  velocity: 0.8,
+                  channel: data.channel
+              }));
+              solveAndPlayBatch(syntheticEvents);
+          }
+      }
+      return;
+    }
+
+    if (!event.midi) return;
+
+    if (event.type === 'noteOff') {
+      const data = activeMidiMapping.current.get(event.midi);
+      if (data) {
+        audioController.handleNoteStop(data.btnId);
+        activeMidiMapping.current.delete(event.midi);
+      }
+    }
+  };
+
+  const syncScrubbingNotes = (time: number) => {
+    // 1. Determine Direction at this time using binary search
+    let dir = Direction.PUSH;
+    
+    if (directionEvents.length > 0) {
+      // Binary search to find the last direction event at or before the current time
+      let left = 0;
+      let right = directionEvents.length - 1;
+      let lastValidIndex = -1;
+      
+      while (left <= right) {
+        const mid = Math.floor((left + right) / 2);
+        const event = directionEvents[mid];
+        
+        if (event.time <= time + 0.001) {
+          lastValidIndex = mid;
+          left = mid + 1;
+        } else {
+          right = mid - 1;
+        }
+      }
+      
+      if (lastValidIndex >= 0) {
+        dir = directionEvents[lastValidIndex].direction;
+      }
+    }
+    
+    if (dir !== directionRef.current) {
+      directionRef.current = dir;
+      audioController.setDirection(dir);
+      // If direction changes, clear previous notes to avoid stuck buttons
+      activeScrubbingNotes.current.forEach(id => audioController.handleNoteStop(id));
+      activeScrubbingNotes.current.clear();
+    }
+
+    // 2. Find Active Notes
+    const activeIds = new Set<string>();
+    const newAlternatives = new Set<string>();
+    
+    allNotes.forEach(note => {
+      // Check if note overlaps current time
+      if (time >= note.time && time < note.time + note.duration) {
+        const shiftedMidi = note.midi + (octaveShiftRef.current * 12);
+        
+        const mode = channelModes[note.channel] || 'muted';
+        if (mode === 'muted') return;
+
+        const allBtnIds = getButtonIdsForNote(shiftedMidi, dir);
+        
+        // Filter valid candidates
+        const candidates = allBtnIds.filter(btnId => {
+            const isBassBtn = btnId.startsWith('bass');
+            const isTrebleBtn = btnId.startsWith('treble');
+            if (mode === 'bass' && !isBassBtn) return false;
+            if (mode === 'treble' && !isTrebleBtn) return false;
+            return true;
+        });
+
+        if (candidates.length === 0) return;
+
+        // Determine Primary Button
+        const key = getNoteKey(note.midi, note.time, note.channel);
+        let primaryId = fingeringOverrides[key];
+
+        // If override is invalid or missing, default to first candidate (or heuristic)
+        if (!primaryId || !candidates.includes(primaryId)) {
+            primaryId = candidates[0];
+        }
+
+        activeIds.add(primaryId);
+
+        // Mark others as alternatives
+        candidates.forEach(id => {
+            if (id !== primaryId) newAlternatives.add(id);
+        });
+
+        // Play Primary
+        if (!activeScrubbingNotes.current.has(primaryId)) {
+             const isBassRow = primaryId.startsWith('bass');
+             let type: 'bass' | 'chord' | 'treble' = 'treble';
+             let chordType = undefined;
+
+             if (isBassRow) {
+                const [_, rStr, bStr] = primaryId.split('-');
+                const r = parseInt(rStr);
+                const b = parseInt(bStr);
+                const def = BASS_ROWS.find(row => row.rowId === r)?.buttons[b];
+                if (def) {
+                    const noteDef = dir === Direction.PUSH ? def.push : def.pull;
+                    type = noteDef.type as any;
+                    chordType = noteDef.chordType;
+                }
+             }
+
+             audioController.handleNoteStart(
+               primaryId,
+               { midi: shiftedMidi, label: 'Scrub' },
+               type,
+               chordType,
+               dir,
+               {
+                 silent: !isScrubbingSoundEnabled,
+                 duration: 2.0
+               }
+             );
+             activeScrubbingNotes.current.add(primaryId);
+        }
+      }
+    });
+
+    setAlternativeButtons(newAlternatives);
+
+    // 3. Stop notes that are no longer active
+    activeScrubbingNotes.current.forEach(id => {
+      if (!activeIds.has(id)) {
+        audioController.handleNoteStop(id);
+        activeScrubbingNotes.current.delete(id);
+      }
+    });
+  };
+
+  const seek = (time: number) => {
+    const newTime = Math.max(0, Math.min(time, totalTime));
+    setCurrentTime(newTime);
+    
+    if (isPlaying) {
+      const speedRatio = bpm / originalBpm;
+      startTimeRef.current = performance.now() - (newTime * 1000 / speedRatio);
+    } else {
+      pausedTimeRef.current = newTime;
+      syncScrubbingNotes(newTime);
+    }
+  };
+
+  const loadProject = async (project: MidiProject) => {
+    if (!project.midiBase64) return;
+    setRawMidiBase64(project.midiBase64);
+    setCurrentProjectId(project.id);
+    
+    const binaryString = atob(project.midiBase64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    await parseAndLoadMidi(bytes.buffer, project.name);
+    
+    setBpm(project.bpm);
+    setOctaveShift(project.octaveShift);
+    setChannelModes(project.channelModes);
+    updateDirections(project.directionEvents);
+    setFingeringOverrides(project.fingeringOverrides || {}); // Restore overrides
+  };
+
+  const getProjectState = (): Omit<MidiProject, 'id' | 'name' | 'lastModified'> | null => {
+    if (!rawMidiBase64) return null;
+    return {
+      midiBase64: rawMidiBase64,
+      bpm,
+      octaveShift,
+      channelModes,
+      directionEvents,
+      fingeringOverrides // Save overrides
+    };
+  };
+
+  return {
+    isPlaying,
+    currentTime,
+    totalTime,
+    bpm,
+    setBpm,
+    fileName,
+    loadMidiFile,
+    togglePlay,
+    resetPlayer,
+    availableChannels,
+    channelModes,
+    cycleChannelMode,
+    allNotes,
+    seek,
+    octaveShift,
+    setOctaveShift,
+    directionEvents,
+    updateDirections,
+    isScrubbingSoundEnabled,
+    setIsScrubbingSoundEnabled,
+    currentProjectId,
+    loadProject,
+    getProjectState,
+    alternativeButtons,
+    setFingeringOverride
+  };
+};
+```
+
+hooks/useSoundSettings.ts:1-(48)
+```
+import { useState, useEffect } from 'react';
+import { SoundSettings } from '../types';
+import { audioService } from '../services/audioService';
+import { STORAGE_KEY_SOUND, DEFAULT_SOUND_SETTINGS } from '../helpers/appConfig';
+
+export const useSoundSettings = () => {
+  const [settings, setSettings] = useState<SoundSettings>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_SOUND);
+      // Merge saved settings with defaults to ensure new keys (like inputGain) exist
+      return saved ? { ...DEFAULT_SOUND_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SOUND_SETTINGS;
+    } catch (e) {
+      console.error("Failed to load sound settings", e);
+      return DEFAULT_SOUND_SETTINGS;
+    }
+  });
+
+  // Sync with AudioService on mount/change
+  useEffect(() => {
+    audioService.updateSettings(settings);
+  }, [settings]);
+
+  const updateSetting = (key: keyof SoundSettings, value: number) => {
+    const newSettings = { ...settings, [key]: value };
+    setSettings(newSettings);
+    audioService.updateSettings(newSettings);
+    localStorage.setItem(STORAGE_KEY_SOUND, JSON.stringify(newSettings));
+  };
+
+  const resetSetting = (key: keyof SoundSettings) => {
+    updateSetting(key, DEFAULT_SOUND_SETTINGS[key]);
+  };
+
+  const resetAllSettings = () => {
+    if (confirm("Reset all sound settings to default?")) {
+      setSettings(DEFAULT_SOUND_SETTINGS);
+      audioService.updateSettings(DEFAULT_SOUND_SETTINGS);
+      localStorage.setItem(STORAGE_KEY_SOUND, JSON.stringify(DEFAULT_SOUND_SETTINGS));
+    }
+  };
+
+  return {
+    settings,
+    updateSetting,
+    resetSetting,
+    resetAllSettings
+  };
+};
+```
+
+index.html:1-(47)
+```
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Steirische Harmonika Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Custom scrollbar for a cleaner look */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8; 
+      }
+      
+      .wood-pattern {
+        background-color: #f8fafc;
+        background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 2px, transparent 2px, transparent 10px);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "@heroicons/react/": "https://aistudiocdn.com/@heroicons/react@^2.2.0/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-gray-50 text-gray-900 overflow-hidden">
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>
+```
+
+index.tsx:1-(15)
+```
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+```
+
+metadata.json:1-(5)
+```
+{
+  "name": "Steirische Simulator (B-Es-As-Des)",
+  "description": "Een virtuele Steirische Harmonika met B-Es-As-Des stemming. Speel melodie en bas, wissel tussen duwen en trekken, en leer noten met AI-ondersteuning.",
+  "requestFramePermissions": []
+}
+```
+
+package.json:1-(25)
+```
+{
+  "name": "steirische-simulator-(b-es-as-des)",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "@heroicons/react": "^2.2.0",
+    "@tonejs/midi": "^2.0.28",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.0"
+  }
+}
+```
+
+README.md:1-(21)
+```
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+</div>
+
+# Run and deploy your AI Studio app
+
+This contains everything you need to run your app locally.
+
+View your app in AI Studio: https://ai.studio/apps/drive/12LHxn8Y174EcJYAbhUibuNNbbf7WC7L6
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
+```
+
+services/audio/generators.ts:1-(81)
+```
+// file: services/audio/generators.ts
+import { SoundSettings } from '../../types';
+
+export const midiToFreq = (midi: number): number => {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+};
+
+export const makeDistortionCurve = (amount: number): Float32Array => {
+  const k = amount;
+  const n_samples = 44100;
+  const curve = new Float32Array(n_samples);
+  const deg = Math.PI / 180;
+  if (amount === 0) {
+      for (let i = 0; i < n_samples; ++i) curve[i] = (i / n_samples) * 2 - 1;
+      return curve;
+  }
+  for (let i = 0; i < n_samples; ++i) {
+    const x = (i * 2) / n_samples - 1;
+    curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
+  }
+  return curve;
+};
+
+export const generateReverbImpulse = (ctx: AudioContext, duration: number): AudioBuffer => {
+  const rate = ctx.sampleRate;
+  const length = rate * duration;
+  const impulse = ctx.createBuffer(2, length, rate);
+  const left = impulse.getChannelData(0);
+  const right = impulse.getChannelData(1);
+  for (let i = 0; i < length; i++) {
+    const decay = Math.pow(1 - i / length, 2); // Exponential decay
+    left[i] = (Math.random() * 2 - 1) * decay;
+    right[i] = (Math.random() * 2 - 1) * decay;
+  }
+  return impulse;
+};
+
+export const generateNoiseBuffer = (ctx: AudioContext): AudioBuffer => {
+  const bufferSize = ctx.sampleRate * 2; 
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  let b0=0, b1=0, b2=0, b3=0, b4=0, b5=0, b6=0;
+  for (let i = 0; i < bufferSize; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + white * 0.0555179;
+    b1 = 0.99332 * b1 + white * 0.0750759;
+    b2 = 0.96900 * b2 + white * 0.1538520;
+    b3 = 0.86650 * b3 + white * 0.3104856;
+    b4 = 0.55000 * b4 + white * 0.5329522;
+    b5 = -0.7616 * b5 - white * 0.0168980;
+    data[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+    data[i] *= 0.11; 
+    b6 = white * 0.115926;
+  }
+  return buffer;
+};
+
+export const generateTrebleWave = (ctx: AudioContext, settings: SoundSettings): PeriodicWave => {
+  const numCoeffs = 128;
+  const real = new Float32Array(numCoeffs);
+  const imag = new Float32Array(numCoeffs);
+  for (let n = 1; n < numCoeffs; n++) {
+    let amp = 1.0 / Math.pow(n, 2.5 - settings.harmonicBrightness); // Brightness control
+    if (n === 3) amp *= 1.5; 
+    if (n === 5) amp *= 1.2; 
+    imag[n] = amp;
+  }
+  return ctx.createPeriodicWave(real, imag);
+};
+
+export const generateBassWave = (ctx: AudioContext, settings: SoundSettings): PeriodicWave => {
+  const numCoeffs = 128;
+  const real = new Float32Array(numCoeffs);
+  const imag = new Float32Array(numCoeffs);
+  for (let n = 1; n < numCoeffs; n++) {
+    let amp = 1.0 / Math.pow(n, 0.9); 
+    if (n % 2 === 0) amp *= (1.0 + settings.bassGrowl); // Growl control
+    imag[n] = amp;
+  }
+  return ctx.createPeriodicWave(real, imag);
+};
+```
+
+services/audio/internalTypes.ts:1-(36)
+```
+// file: services/audio/internalTypes.ts
+import { SoundSettings } from '../../types';
+
+export interface ActiveVoice {
+  sourceNodes: AudioScheduledSourceNode[]; 
+  gain: GainNode; 
+  nodesToDisconnect: AudioNode[];
+  // References for real-time updates
+  panner: StereoPannerNode;
+  peakFilter: BiquadFilterNode;
+  lpFilter: BiquadFilterNode;
+  noiseGain: GainNode;
+  oscillators: OscillatorNode[]; 
+  baseFreq: number; 
+  type: 'bass' | 'chord' | 'treble';
+  startTime: number;
+}
+
+export interface AudioResources {
+  trebleWave: PeriodicWave | null;
+  bassWave: PeriodicWave | null;
+  noiseBuffer: AudioBuffer | null;
+}
+
+export interface MasterChain {
+  preGain: GainNode;
+  inputLimiter: DynamicsCompressorNode;
+  tubeDistortion: WaveShaperNode;
+  eqLowNode: BiquadFilterNode;
+  eqMidNode: BiquadFilterNode;
+  eqHighNode: BiquadFilterNode;
+  reverbNode: ConvolverNode;
+  dryGain: GainNode;
+  wetGain: GainNode;
+  masterGain: GainNode;
+}
+```
+
+services/audio/master.ts:1-(92)
+```
+// file: services/audio/master.ts
+import { SoundSettings } from '../../types';
+import { MasterChain } from './internalTypes';
+import { makeDistortionCurve, generateReverbImpulse } from './generators';
+
+export const setupMasterChain = (ctx: AudioContext, settings: SoundSettings): MasterChain => {
+  // Chain: PreGain -> Saturation -> EQ -> Reverb/Dry -> Limiter -> Master -> Dest
+
+  const preGain = ctx.createGain();
+  preGain.gain.value = settings.inputGain;
+
+  const tubeDistortion = ctx.createWaveShaper();
+  // Cast to any to resolve TS mismatch
+  tubeDistortion.curve = makeDistortionCurve(0) as any;
+  tubeDistortion.oversample = '4x';
+
+  const eqLowNode = ctx.createBiquadFilter();
+  eqLowNode.type = 'lowshelf';
+  eqLowNode.frequency.value = 200;
+
+  const eqMidNode = ctx.createBiquadFilter();
+  eqMidNode.type = 'peaking';
+  eqMidNode.frequency.value = 1000;
+  eqMidNode.Q.value = 1;
+
+  const eqHighNode = ctx.createBiquadFilter();
+  eqHighNode.type = 'highshelf';
+  eqHighNode.frequency.value = 3000;
+
+  // Reverb Send
+  const reverbNode = ctx.createConvolver();
+  reverbNode.buffer = generateReverbImpulse(ctx, settings.reverbSize);
+  
+  const dryGain = ctx.createGain();
+  const wetGain = ctx.createGain();
+
+  // Limiter (Compressor) - Now at the end of the chain
+  const inputLimiter = ctx.createDynamicsCompressor();
+  inputLimiter.threshold.value = -2; // Higher threshold for safety
+  inputLimiter.ratio.value = 12;
+  inputLimiter.attack.value = 0.003;
+  inputLimiter.release.value = 0.25;
+  
+  const masterGain = ctx.createGain();
+  masterGain.gain.value = settings.masterVolume;
+
+  // Connect Graph
+  preGain.connect(tubeDistortion);
+  tubeDistortion.connect(eqLowNode);
+  eqLowNode.connect(eqMidNode);
+  eqMidNode.connect(eqHighNode);
+
+  // Split to Dry/Wet
+  eqHighNode.connect(dryGain);
+  eqHighNode.connect(reverbNode);
+  reverbNode.connect(wetGain);
+
+  // Sum to Limiter -> Master
+  dryGain.connect(inputLimiter);
+  wetGain.connect(inputLimiter);
+  inputLimiter.connect(masterGain);
+  masterGain.connect(ctx.destination);
+
+  return {
+    preGain,
+    inputLimiter,
+    tubeDistortion,
+    eqLowNode,
+    eqMidNode,
+    eqHighNode,
+    reverbNode,
+    dryGain,
+    wetGain,
+    masterGain
+  };
+};
+
+export const updateMasterChain = (ctx: AudioContext, chain: MasterChain, settings: SoundSettings) => {
+  const now = ctx.currentTime;
+  
+  chain.preGain.gain.setTargetAtTime(settings.inputGain, now, 0.05);
+  chain.masterGain.gain.setTargetAtTime(settings.masterVolume, now, 0.05);
+  chain.eqLowNode.gain.setTargetAtTime(settings.eqLow, now, 0.1);
+  chain.eqMidNode.gain.setTargetAtTime(settings.eqMid, now, 0.1);
+  chain.eqHighNode.gain.setTargetAtTime(settings.eqHigh, now, 0.1);
+  
+  chain.dryGain.gain.setTargetAtTime(1 - settings.reverbMix, now, 0.1);
+  chain.wetGain.gain.setTargetAtTime(settings.reverbMix, now, 0.1);
+
+  // Cast to any to resolve TS mismatch
+  chain.tubeDistortion.curve = makeDistortionCurve(settings.tubeSaturation) as any;
+};
+```
+
+services/audio/mechanics.ts:1-(70)
+```
+// file: services/audio/mechanics.ts
+import { SoundSettings } from '../../types';
+import { MasterChain } from './internalTypes';
+
+export const playMechanicalSound = (
+  ctx: AudioContext, 
+  masterChain: MasterChain, 
+  settings: SoundSettings, 
+  time: number, 
+  type: 'click' | 'thud', 
+  isBass: boolean
+) => {
+  // 1. Get Base Volume
+  let vol = type === 'click' ? settings.buttonClickVolume : settings.palletThudVolume;
+  
+  // 2. Apply Square Law (makes slider feel more natural)
+  vol = vol * vol;
+
+  if (vol <= 0.001) return; // Silence threshold
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  // Randomness
+  const rand = (Math.random() - 0.5) * settings.mechanismNoiseRandomness;
+  
+  // 3. Calculate Modifiers BEFORE scheduling
+  let freqMult = 1.0;
+  let volMult = 1.0;
+  
+  if (isBass && settings.bassButtonClunk > 0) {
+      freqMult = (1.0 - settings.bassButtonClunk * 0.4); // Lower pitch
+      volMult = (1.0 + settings.bassButtonClunk * 0.5); // Louder
+  }
+
+  if (type === 'click') {
+      // Sharp click (Attack)
+      osc.type = 'sine';
+      const baseFreq = isBass ? 150 : 300;
+      osc.frequency.setValueAtTime((baseFreq + (rand * 50)) * freqMult, time);
+      osc.frequency.exponentialRampToValueAtTime(50, time + 0.05);
+      
+      filter.type = 'lowpass';
+      filter.frequency.value = (isBass ? 800 : 1500) * freqMult;
+      
+      const peakVol = vol * volMult;
+      gain.gain.setValueAtTime(peakVol, time);
+      // Use LINEAR ramp to 0 to ensure it actually fades out completely and scales correctly
+      gain.gain.linearRampToValueAtTime(0, time + 0.03); 
+  } else {
+      // Dull thud (Release)
+      osc.type = 'triangle';
+      const baseFreq = 80;
+      osc.frequency.setValueAtTime((baseFreq + (rand * 20)) * freqMult, time);
+      osc.frequency.exponentialRampToValueAtTime(20, time + 0.1);
+      
+      filter.type = 'lowpass';
+      filter.frequency.value = 300 * freqMult;
+      
+      const peakVol = vol * 0.8 * volMult;
+      gain.gain.setValueAtTime(peakVol, time);
+      // Use LINEAR ramp to 0
+      gain.gain.linearRampToValueAtTime(0, time + 0.08); 
+  }
+
+  osc.connect(filter).connect(gain).connect(masterChain.preGain);
+  osc.start(time);
+  osc.stop(time + 0.15);
+};
+```
+
+services/audio/voice.ts:1-(262)
+```
+// file: services/audio/voice.ts
+import { SoundSettings, Direction } from '../../types';
+import { ActiveVoice, AudioResources, MasterChain } from './internalTypes';
+import { midiToFreq } from './generators';
+
+// Helper to create a single oscillator
+const createOscillator = (
+  ctx: AudioContext, 
+  destination: AudioNode, 
+  freq: number, 
+  baseVol: number, 
+  wave: PeriodicWave, 
+  tracker: AudioScheduledSourceNode[],
+  oscTracker: OscillatorNode[],
+  now: number,
+  settings: SoundSettings,
+  applyLFO: boolean = false,
+  fixedDetune: number = 0
+) => {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  if (wave) osc.setPeriodicWave(wave);
+  else osc.type = 'sawtooth';
+
+  osc.frequency.value = freq;
+  
+  // Pitch Instability + Bellows Bend
+  const drift = (Math.random() - 0.5) * settings.pitchInstability;
+  const bend = settings.bellowsPitchBend; // Usually negative
+  osc.detune.value = fixedDetune + drift - bend;
+
+  // Bellows Shake LFO
+  if (settings.bellowsShakeDepth > 0) {
+      const shake = ctx.createOscillator();
+      shake.frequency.value = settings.bellowsShakeSpeed;
+      const shakeGain = ctx.createGain();
+      shakeGain.gain.value = settings.bellowsShakeDepth * 10; // Pitch wobble
+      shake.connect(shakeGain).connect(osc.detune);
+      shake.start(now);
+      tracker.push(shake);
+      
+      // Also modulate volume
+      const volShake = ctx.createGain();
+      volShake.gain.value = settings.bellowsShakeDepth * 0.2;
+      shake.connect(volShake).connect(gain.gain);
+  }
+
+  if (applyLFO) {
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 5 + Math.random() * 2; 
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 4; 
+    lfo.connect(lfoGain).connect(osc.detune);
+    lfo.start(now);
+    tracker.push(lfo);
+  }
+
+  const randomLevel = 0.95 + (Math.random() * 0.1);
+  gain.gain.value = baseVol * randomLevel;
+
+  const randomOffset = Math.random() * 0.015;
+
+  osc.connect(gain).connect(destination);
+  osc.start(now + randomOffset);
+  
+  tracker.push(osc);
+  oscTracker.push(osc);
+};
+
+export const createVoice = (
+  ctx: AudioContext,
+  masterChain: MasterChain,
+  resources: AudioResources,
+  settings: SoundSettings,
+  midi: number,
+  type: 'bass' | 'chord' | 'treble',
+  chordType: string = 'major',
+  direction: Direction = Direction.PUSH
+): ActiveVoice => {
+  const now = ctx.currentTime;
+  const isBass = type === 'bass';
+
+  // 1. Channel Strip
+  const envelopeGain = ctx.createGain();
+  envelopeGain.gain.setValueAtTime(0, now);
+
+  const panner = ctx.createStereoPanner();
+  const width = isBass ? settings.bassStereoWidth : settings.trebleStereoWidth;
+  panner.pan.value = (Math.random() * width * 2) - width;
+
+  const hpFilter = ctx.createBiquadFilter();
+  hpFilter.type = 'highpass';
+  hpFilter.frequency.value = isBass ? 40 : 100;
+
+  const peakFilter = ctx.createBiquadFilter();
+  peakFilter.type = 'peaking';
+  peakFilter.frequency.value = isBass ? 200 : settings.boxResonanceFreq;
+  peakFilter.Q.value = 1.5;
+  peakFilter.gain.value = isBass ? settings.bassChamberResonance : settings.boxResonanceAmount;
+
+  const lpFilter = ctx.createBiquadFilter();
+  lpFilter.type = 'lowpass';
+  let cutoff = settings.grilleFilterCutoff;
+  if (isBass) cutoff = 800;
+  if (settings.cassottoEffect > 0 && !isBass) cutoff *= (1 - settings.cassottoEffect * 0.5);
+  lpFilter.frequency.value = cutoff;
+
+  // Push/Pull Variance (Subtle EQ shift)
+  if (settings.pushPullVariance > 0) {
+      if (direction === Direction.PULL) {
+          peakFilter.frequency.value *= 1.1; // Pulling tightens the box slightly
+      }
+  }
+
+  hpFilter.connect(peakFilter);
+  peakFilter.connect(lpFilter);
+  lpFilter.connect(panner);
+  panner.connect(envelopeGain);
+  envelopeGain.connect(masterChain.preGain);
+
+  const sourceNodes: AudioScheduledSourceNode[] = [];
+  const oscNodes: OscillatorNode[] = [];
+  const nodesToDisconnect: AudioNode[] = [hpFilter, peakFilter, lpFilter, panner, envelopeGain];
+
+  // 2. Air Noise
+  const noiseGain = ctx.createGain();
+  if (resources.noiseBuffer && settings.airNoiseLevel > 0) {
+    const noiseNode = ctx.createBufferSource();
+    noiseNode.buffer = resources.noiseBuffer;
+    noiseNode.loop = true;
+    
+    const baseNoise = isBass ? 1.5 : 1.0;
+    noiseGain.gain.value = settings.airNoiseLevel * baseNoise;
+    
+    // Turbulence LFO
+    if (settings.airTurbulence > 0) {
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 0.5 + Math.random();
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = settings.airTurbulence * 0.01;
+        lfo.connect(lfoGain).connect(noiseGain.gain);
+        lfo.start(now);
+        sourceNodes.push(lfo);
+    }
+
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.value = 1500;
+    noiseFilter.Q.value = 1;
+
+    noiseNode.connect(noiseFilter).connect(noiseGain).connect(panner);
+    noiseNode.start(now);
+    sourceNodes.push(noiseNode);
+    nodesToDisconnect.push(noiseGain, noiseFilter);
+  }
+
+  // 3. Voice Config
+  const freq = midiToFreq(midi);
+  const attack = settings.reedAttackTime * settings.reedStiffness;
+
+  if (type === 'bass') {
+    envelopeGain.gain.linearRampToValueAtTime(0.95, now + attack * 1.5);
+    
+    // Reduced gains to prevent clipping (0.6 -> 0.35)
+    createOscillator(ctx, hpFilter, freq, 0.35, resources.bassWave!, sourceNodes, oscNodes, now, settings, true, -2);
+    createOscillator(ctx, hpFilter, freq, 0.35, resources.bassWave!, sourceNodes, oscNodes, now, settings, true, 2);
+    // Octave (0.2 -> 0.15)
+    createOscillator(ctx, hpFilter, freq * 2, 0.15 * settings.bassOctaveBalance, resources.bassWave!, sourceNodes, oscNodes, now, settings);
+
+  } else if (type === 'chord') {
+    envelopeGain.gain.linearRampToValueAtTime(0.8, now + attack);
+
+    let voicing: [number, number][] = [];
+    if (chordType === 'major') voicing = [[0, 0.30], [4, 0.50], [7, 0.50], [12, 0.75], [16, 0.40], [19, 0.35], [24, 0.20]];
+    else if (chordType === 'minor') voicing = [[0, 0.30], [3, 0.50], [7, 0.50], [12, 0.75], [15, 0.40], [19, 0.35], [24, 0.20]];
+    else voicing = [[0, 0.30], [4, 0.50], [10, 0.45], [12, 0.75], [16, 0.40], [22, 0.30], [24, 0.20]];
+
+    voicing.forEach(([interval, vol], index) => {
+      const noteFreq = midiToFreq(midi + interval);
+      const useLFO = index === 3;
+      // Reduced multiplier (0.25 -> 0.15)
+      createOscillator(ctx, hpFilter, noteFreq, vol * 0.15, resources.trebleWave!, sourceNodes, oscNodes, now, settings, useLFO);
+    });
+
+  } else {
+    // Treble
+    envelopeGain.gain.linearRampToValueAtTime(1.0, now + attack);
+
+    // Reduced gains (0.3/0.25 -> 0.2/0.15)
+    createOscillator(ctx, hpFilter, freq, 0.2, resources.trebleWave!, sourceNodes, oscNodes, now, settings, true);
+    createOscillator(ctx, hpFilter, freq, 0.15, resources.trebleWave!, sourceNodes, oscNodes, now, settings, false, settings.musetteDetune);
+    createOscillator(ctx, hpFilter, freq, 0.15, resources.trebleWave!, sourceNodes, oscNodes, now, settings, false, -settings.musetteDetune);
+    
+    if (settings.trebleOctaveBalance > 0) {
+        createOscillator(ctx, hpFilter, freq * 2, 0.1 * settings.trebleOctaveBalance, resources.trebleWave!, sourceNodes, oscNodes, now, settings);
+    }
+  }
+
+  return { 
+    sourceNodes, 
+    gain: envelopeGain, 
+    nodesToDisconnect,
+    panner,
+    peakFilter,
+    lpFilter,
+    noiseGain,
+    oscillators: oscNodes,
+    baseFreq: freq,
+    type,
+    startTime: now
+  };
+};
+
+export const updateVoice = (voice: ActiveVoice, settings: SoundSettings, now: number) => {
+  // Box Resonance
+  const isBass = voice.type === 'bass';
+  const resFreq = isBass ? 200 : settings.boxResonanceFreq;
+  const resGain = isBass ? settings.bassChamberResonance : settings.boxResonanceAmount;
+  
+  voice.peakFilter.frequency.setTargetAtTime(resFreq, now, 0.1);
+  voice.peakFilter.gain.setTargetAtTime(resGain, now, 0.1);
+
+  // Grille / Brightness
+  let cutoff = settings.grilleFilterCutoff;
+  if (isBass) cutoff = 800; // Bass always lower
+  if (settings.cassottoEffect > 0 && !isBass) {
+    cutoff *= (1 - settings.cassottoEffect * 0.5); // Cassotto muffles highs
+  }
+  voice.lpFilter.frequency.setTargetAtTime(cutoff, now, 0.1);
+
+  // Air Noise
+  const baseNoise = isBass ? 1.5 : 1.0;
+  voice.noiseGain.gain.setTargetAtTime(settings.airNoiseLevel * baseNoise, now, 0.1);
+
+  // Musette Detune (Treble/Chord only)
+  if (!isBass) {
+    voice.oscillators.forEach((osc, idx) => {
+       // idx 1 = sharp, idx 2 = flat
+       if (idx === 1) osc.detune.setTargetAtTime(settings.musetteDetune + settings.bellowsPitchBend, now, 0.1);
+       if (idx === 2) osc.detune.setTargetAtTime(-settings.musetteDetune + settings.bellowsPitchBend, now, 0.1);
+       if (idx === 0) osc.detune.setTargetAtTime(settings.bellowsPitchBend, now, 0.1);
+    });
+  }
+};
+
+export const stopVoice = (voice: ActiveVoice, ctx: AudioContext, settings: SoundSettings) => {
+  const now = ctx.currentTime;
+  
+  voice.gain.gain.cancelScheduledValues(now);
+  voice.gain.gain.setValueAtTime(voice.gain.gain.value, now);
+  // Use Release Time Setting
+  voice.gain.gain.exponentialRampToValueAtTime(0.001, now + settings.reedReleaseTime);
+
+  voice.sourceNodes.forEach(node => node.stop(now + settings.reedReleaseTime + 0.1));
+  
+  setTimeout(() => {
+    voice.gain.disconnect();
+    voice.nodesToDisconnect.forEach(node => node.disconnect());
+  }, (settings.reedReleaseTime * 1000) + 200);
+};
+```
+
+services/audioService.ts:1-(126)
+```
+// file: services/audioService.ts
+import { SoundSettings, Direction } from '../types';
+import { ActiveVoice, AudioResources, MasterChain } from './audio/internalTypes';
+import { setupMasterChain, updateMasterChain } from './audio/master';
+import { generateTrebleWave, generateBassWave, generateNoiseBuffer } from './audio/generators';
+import { playMechanicalSound } from './audio/mechanics';
+import { createVoice, updateVoice, stopVoice } from './audio/voice';
+
+class AudioService {
+  private context: AudioContext | null = null;
+  private masterChain: MasterChain | null = null;
+  private activeVoices: Map<string, ActiveVoice> = new Map();
+  private resources: AudioResources = {
+    trebleWave: null,
+    bassWave: null,
+    noiseBuffer: null
+  };
+
+  // Default Settings (will be overwritten by App)
+  private settings: SoundSettings = {
+    musetteDetune: 14, reedAttackTime: 0.03, reedReleaseTime: 0.15, pitchInstability: 2, bellowsPitchBend: 0,
+    harmonicBrightness: 1.0, bassGrowl: 1.0, reedStiffness: 1.0, trebleOctaveBalance: 0.5, bassOctaveBalance: 0.5,
+    airNoiseLevel: 0.03, airTurbulence: 0.5, bellowsShakeSpeed: 5, bellowsShakeDepth: 0, dynamicRange: 1.0, pushPullVariance: 0,
+    buttonClickVolume: 0.4, palletThudVolume: 0.3, mechanismNoiseRandomness: 0.2, bassButtonClunk: 0.5,
+    boxResonanceFreq: 400, boxResonanceAmount: 4, grilleFilterCutoff: 5000, cassottoEffect: 0, bassChamberResonance: 2,
+    tubeSaturation: 0, inputGain: 0.5, trebleStereoWidth: 0.3, bassStereoWidth: 0.1, reverbSize: 1.5, reverbMix: 0.1,
+    eqLow: 0, eqMid: 0, eqHigh: 0, masterVolume: 0.4
+  };
+
+  constructor() {}
+
+  init() {
+    if (!this.context) {
+      this.context = new (window.AudioContext || (window as any).webkitAudioContext)();
+      
+      // 1. Setup Master Chain
+      this.masterChain = setupMasterChain(this.context, this.settings);
+
+      // 2. Generate Assets
+      this.regenerateAssets();
+    }
+  }
+
+  private regenerateAssets() {
+    if (!this.context) return;
+    this.resources.trebleWave = generateTrebleWave(this.context, this.settings);
+    this.resources.bassWave = generateBassWave(this.context, this.settings);
+    if (!this.resources.noiseBuffer) {
+      this.resources.noiseBuffer = generateNoiseBuffer(this.context);
+    }
+  }
+
+  updateSettings(newSettings: SoundSettings) {
+    this.settings = newSettings;
+    if (!this.context || !this.masterChain) return;
+    const now = this.context.currentTime;
+
+    // 1. Update Master Chain
+    updateMasterChain(this.context, this.masterChain, this.settings);
+
+    // 2. Regenerate Waveforms (if harmonic params changed)
+    // Optimization: Could check if specific params changed, but for now we regen
+    this.regenerateAssets();
+
+    // 3. Update Active Voices
+    this.activeVoices.forEach(voice => {
+      updateVoice(voice, this.settings, now);
+    });
+  }
+
+  playNote(noteId: string, midi: number, type: 'bass' | 'chord' | 'treble', chordType: 'major' | 'minor' | '7th' | 'none' = 'major', direction: Direction = Direction.PUSH, options?: { duration?: number }) {
+    if (!this.context) this.init();
+    if (this.activeVoices.has(noteId)) return;
+    if (!this.masterChain) return;
+
+    const ctx = this.context!;
+    const now = ctx.currentTime;
+    const isBass = type === 'bass';
+
+    // 1. Mechanical Click
+    playMechanicalSound(ctx, this.masterChain, this.settings, now, 'click', isBass || type === 'chord');
+
+    // 2. Create Voice
+    const voice = createVoice(
+      ctx,
+      this.masterChain,
+      this.resources,
+      this.settings,
+      midi,
+      type,
+      chordType,
+      direction
+    );
+
+    this.activeVoices.set(noteId, voice);
+
+    // Auto-stop if duration provided
+    if (options?.duration) {
+      setTimeout(() => {
+        this.stopNote(noteId);
+      }, options.duration * 1000);
+    }
+  }
+
+  stopNote(noteId: string) {
+    if (!this.context || !this.masterChain) return;
+    const voice = this.activeVoices.get(noteId);
+    if (voice) {
+      const now = this.context.currentTime;
+      
+      // Mechanical Release Thud
+      playMechanicalSound(this.context, this.masterChain, this.settings, now, 'thud', voice.type === 'bass' || voice.type === 'chord');
+
+      // Stop Voice
+      stopVoice(voice, this.context, this.settings);
+      
+      this.activeVoices.delete(noteId);
+    }
+  }
+
+  stopAll() {
+    this.activeVoices.forEach((_, key) => this.stopNote(key));
+  }
+}
+
+export const audioService = new AudioService();
+```
+
+services/geminiService.ts:1-(46)
+```
+import { GoogleGenAI } from "@google/genai";
+import { ChordAnalysis } from "../types";
+
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+export const analyzeChord = async (notes: string[], direction: string): Promise<ChordAnalysis> => {
+  try {
+    const prompt = `
+      I am playing a Steirische Harmonika (Styrian Accordion).
+      Bellows direction: ${direction}.
+      The currently pressed notes are: ${notes.join(', ')}.
+      
+      Please analyze this combination. 
+      1. What chord is this? (e.g., "Eb Major", "Bb Dominant 7th").
+      2. Provide a very short description (1 sentence) in Dutch.
+      
+      Return JSON format:
+      {
+        "chordName": "Name",
+        "description": "Dutch description",
+        "notes": ["List", "Of", "Notes"]
+      }
+    `;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    const text = response.text;
+    if (!text) throw new Error("No response from Gemini");
+    return JSON.parse(text) as ChordAnalysis;
+
+  } catch (error) {
+    console.error("Gemini Error:", error);
+    return {
+      chordName: "Onbekend",
+      description: "Kon de harmonie niet analyseren.",
+      notes: notes
+    };
+  }
+};
+```
+
+steirische-simulator-APK.code-workspace:1-(8)
+```
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}
+```
+
+tsconfig.json:1-(29)
+```
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  }
+}
+```
+
+types.ts:1-(93)
+```
+// file: types.ts
+
+export enum Direction {
+  PUSH = 'push',
+  PULL = 'pull'
+}
+
+export interface NoteDefinition {
+  midi: number;
+  label: string;
+  type: 'treble' | 'bass' | 'chord';
+  chordType?: string;
+}
+
+export interface ButtonPosition {
+  left: number;
+  top: number;
+}
+
+export interface LayoutMap {
+  [key: string]: ButtonPosition;
+}
+
+export interface ChordAnalysis {
+  chordName: string;
+  description: string;
+  notes: string[];
+}
+
+export interface SoundSettings {
+  // Category 1: Reed Physics & Tuning
+  musetteDetune: number;      // 0-50 cents
+  reedAttackTime: number;     // 0.001-0.1s
+  reedReleaseTime: number;    // 0.05-0.5s
+  pitchInstability: number;   // 0-10 cents (random drift)
+  bellowsPitchBend: number;   // 0-20 cents (flattening)
+  harmonicBrightness: number; // 0.5-2.0 (Waveform shape)
+  bassGrowl: number;          // 0-2.0 (Even harmonic boost)
+  reedStiffness: number;      // 0.5-2.0 (Attack curve modifier)
+  trebleOctaveBalance: number;// 0-1 (Mix of high octave)
+  bassOctaveBalance: number;  // 0-1 (Mix of upper bass octave)
+
+  // Category 2: Bellows & Air
+  airNoiseLevel: number;      // 0-0.2
+  airTurbulence: number;      // 0-1 (LFO on noise)
+  bellowsShakeSpeed: number;  // 0-10 Hz
+  bellowsShakeDepth: number;  // 0-1 (Amplitude mod)
+  dynamicRange: number;       // 0-1 (Compression ratio inverse)
+  pushPullVariance: number;   // 0-1 (Timbre shift)
+
+  // Category 3: Mechanics
+  buttonClickVolume: number;  // 0-1
+  palletThudVolume: number;   // 0-1
+  mechanismNoiseRandomness: number; // 0-1
+  bassButtonClunk: number;    // 0-1 (Bass click EQ/Pitch)
+
+  // Category 4: Body & Resonance
+  boxResonanceFreq: number;   // 200-800 Hz
+  boxResonanceAmount: number; // 0-20 dB
+  grilleFilterCutoff: number; // 1000-10000 Hz
+  cassottoEffect: number;     // 0-1 (Tone chamber simulation)
+  bassChamberResonance: number; // 0-20 dB
+
+  // Category 5: Audio Effects & Environment
+  tubeSaturation: number;     // 0-100
+  inputGain: number;          // 0-2.0 (Pre-amp drive)
+  trebleStereoWidth: number;  // 0-1
+  bassStereoWidth: number;    // 0-1
+  reverbSize: number;         // 0.1-5.0s
+  reverbMix: number;          // 0-1
+  eqLow: number;              // -20 to +20 dB
+  eqMid: number;              // -20 to +20 dB
+  eqHigh: number;             // -20 to +20 dB
+  
+  masterVolume: number;       // 0-1
+}
+
+export interface SavedDirectionEvent {
+  time: number;
+  direction: Direction;
+}
+
+export interface MidiProject {
+  id: string;
+  name: string;
+  lastModified: number;
+  midiBase64: string;
+  bpm: number;
+  octaveShift: number;
+  channelModes: Record<number, 'both' | 'bass' | 'treble' | 'muted'>;
+  directionEvents: SavedDirectionEvent[];
+  fingeringOverrides?: Record<string, string>; // Key: "midi-time-channel", Value: buttonId
+}
+```
+
+vite.config.ts:1-(24)
+```
+import path from 'path';
+import { defineConfig, loadEnv } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, '.', '');
+    return {
+      server: {
+        port: 3000,
+        host: '0.0.0.0',
+      },
+      plugins: [react()],
+      define: {
+        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+      },
+      resolve: {
+        alias: {
+          '@': path.resolve(__dirname, '.'),
+        }
+      }
+    };
+});
+```
+
+
