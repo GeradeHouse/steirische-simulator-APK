@@ -18,6 +18,7 @@ export default function App() {
   // --- UI State ---
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeOverlay, setActiveOverlay] = useState<'sound' | 'projects' | null>(null);
+  const [showTooltips, setShowTooltips] = useState(false);
 
   const {
     settings: soundSettings,
@@ -111,20 +112,29 @@ export default function App() {
           handleNoteStart={handleNoteStart}
           handleNoteStop={handleNoteStop}
           handleBgDoubleClick={handleBgDoubleClick}
+          showTooltips={showTooltips}
           midiData={{
             notes: midiPlayer.allNotes,
             currentTime: midiPlayer.currentTime,
             channelModes: midiPlayer.channelModes,
             onSeek: midiPlayer.seek,
             octaveShift: midiPlayer.octaveShift,
+            semitoneShift: midiPlayer.semitoneShift,
             directionEvents: midiPlayer.directionEvents,
             onUpdateDirections: midiPlayer.updateDirections,
             alternativeButtons: midiPlayer.alternativeButtons,
             onFingeringOverride: midiPlayer.setFingeringOverride,
-            isPlaying: midiPlayer.isPlaying
+            isPlaying: midiPlayer.isPlaying,
+            editingNote: midiPlayer.editingNote,
+            onSelectNote: midiPlayer.selectNote,
+            onClearSelection: midiPlayer.clearSelection
           }}
         />
-        <MidiControls player={midiPlayer} />
+        <MidiControls
+          player={midiPlayer}
+          showTooltips={showTooltips}
+          onToggleTooltips={() => setShowTooltips(!showTooltips)}
+        />
       </div>
 
       {/* --- Floating Menu Button --- */}

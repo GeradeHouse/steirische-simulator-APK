@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Midi } from '@tonejs/midi';
 import { Direction, MidiProject, SavedDirectionEvent } from '../types';
-import { getButtonIdForNote, getButtonIdsForNote } from '../helpers/midiMap';
+import { getButtonIdForNote, getButtonIdsForNote, getNoteKey } from '../helpers/midiMap';
 import { BASS_ROWS } from '../constants';
 
 export type ChannelMode = 'both' | 'bass' | 'treble' | 'muted';
@@ -49,6 +49,7 @@ export const useMidiPlayer = (
   // New: Direction Events & Octave Shift
   const [directionEvents, setDirectionEvents] = useState<DirectionEvent[]>([]);
   const [octaveShift, setOctaveShiftState] = useState(0);
+  const [semitoneShift, setSemitoneShiftState] = useState(0); // New State
   const [isScrubbingSoundEnabled, setIsScrubbingSoundEnabled] = useState(false);
   
   // Project Storage State
@@ -57,7 +58,139 @@ export const useMidiPlayer = (
 
   // New: Fingering Override State
   const [fingeringOverrides, setFingeringOverrides] = useState<Record<string, string>>({});
+  const fingeringOverridesRef = useRef<Record<string, string>>({});
+  const [flashingNotes, setFlashingNotes] = useState<Set<string>>(new Set()); // Visual feedback
   const [alternativeButtons, setAlternativeButtons] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    fingeringOverridesRef.current = fingeringOverrides;
+  }, [fingeringOverrides]);
+
+  // Clear flashing notes after render
+  useEffect(() => {
+    if (flashingNotes.size > 0) {
+      const timer = setTimeout(() => {
+        setFlashingNotes(new Set());
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [flashingNotes]);
+
+  const [editingNote, setEditingNote] = useState<{ midi: number, time: number, channel: number } | null>(null);
+
+  const setFingeringOverride = (midi: number, time: number, channel: number, btnId: string) => {
+    const targetKey = getNoteKey(midi, time, channel);
+    
+    // Batch Logic: Propagate to subsequent identical notes
+    const newOverrides = { ...fingeringOverrides };
+    const newFlashing = new Set<string>();
+    
+    // 1. Apply to target
+    newOverrides[targetKey] = btnId;
+    newFlashing.add(targetKey);
+
+    // 2. Find start index and propagate
+    const startIndex = allNotes.findIndex(n =>
+        n.midi === midi && Math.abs(n.time - time) < 0.001 && n.channel === channel
+    );
+
+    if (startIndex !== -1) {
+        let currentTarget = allNotes[startIndex];
+
+        for (let i = startIndex + 1; i < allNotes.length; i++) {
+            const nextNote = allNotes[i];
+            if (nextNote.channel !== channel) continue;
+            
+            if (nextNote.midi === midi) {
+                // Found same note - update override and current reference
+                const nextKey = getNoteKey(nextNote.midi, nextNote.time, nextNote.channel);
+                newOverrides[nextKey] = btnId;
+                newFlashing.add(nextKey);
+                currentTarget = nextNote;
+            } else {
+                // Different note - check if it's harmony or melody
+                
+                // 1. Overlap with current target note? (Harmony of previous/current)
+                // If it starts before the current note ends (with small buffer), it's simultaneous/harmony
+                if (nextNote.time < (currentTarget.time + currentTarget.duration - 0.05)) {
+                    continue;
+                }
+
+                // 2. Overlap with a future target note? (Harmony of next)
+                // Look ahead to find the next instance of the target note
+                let futureTarget = null;
+                for (let j = i + 1; j < allNotes.length; j++) {
+                    if (allNotes[j].channel === channel && allNotes[j].midi === midi) {
+                        futureTarget = allNotes[j];
+                        break;
+                    }
+                }
+
+                if (futureTarget) {
+                    // Check if nextNote overlaps with futureTarget
+                    // Since notes are sorted by time, nextNote.time <= futureTarget.time
+                    // We just need to check if nextNote ends after futureTarget starts (with buffer)
+                    if ((nextNote.time + nextNote.duration) > (futureTarget.time + 0.05)) {
+                         continue;
+                    }
+                }
+
+                // If neither, it's a melodic interruption -> Break chain
+                break;
+            }
+        }
+    }
+
+    setFingeringOverrides(newOverrides);
+    fingeringOverridesRef.current = newOverrides; // Sync Ref immediately
+    
+    // Trigger Flash
+    setFlashingNotes(newFlashing);
+
+    // Immediate visual update if paused
+    if (!isPlaying) {
+      setTimeout(() => seek(currentTime), 0);
+    }
+  };
+
+  const clearSelection = () => setEditingNote(null);
+
+  const selectNote = (note: MidiNote) => {
+    // Cycle Logic if already editing this note
+    if (editingNote &&
+        editingNote.midi === note.midi &&
+        Math.abs(editingNote.time - note.time) < 0.001 &&
+        editingNote.channel === note.channel) {
+        
+        const dir = directionRef.current;
+        const shiftedMidi = note.midi + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
+        const candidates = getButtonIdsForNote(shiftedMidi, dir);
+        
+        if (candidates.length > 1) {
+            const key = getNoteKey(note.midi, note.time, note.channel);
+            // Use Ref to get the absolute latest state
+            const currentId = fingeringOverridesRef.current[key];
+            
+            let nextIndex = 0;
+            if (currentId) {
+                const currIdx = candidates.indexOf(currentId);
+                if (currIdx !== -1) {
+                    nextIndex = (currIdx + 1) % candidates.length;
+                }
+            } else {
+                // Default to second option if no override exists yet
+                nextIndex = 1 % candidates.length;
+            }
+            
+            setFingeringOverride(note.midi, note.time, note.channel, candidates[nextIndex]);
+        }
+        return;
+    }
+
+    setIsPlaying(false);
+    seek(note.time);
+    setEditingNote({ midi: note.midi, time: note.time, channel: note.channel });
+  };
 
   // --- Refs ---
   const eventQueue = useRef<MidiEvent[]>([]);
@@ -69,25 +202,10 @@ export const useMidiPlayer = (
   // Store btnId AND channel to allow re-triggering on direction change
   const activeMidiMapping = useRef<Map<number, { btnId: string, channel: number }>>(new Map());
   const octaveShiftRef = useRef(0);
+  const semitoneShiftRef = useRef(0); // New Ref
   const activeScrubbingNotes = useRef<Set<string>>(new Set());
 
   // --- Helpers ---
-
-  // Helper to generate unique key for a note event
-  const getNoteKey = (midi: number, time: number, channel: number) => {
-    return `${midi}-${time.toFixed(3)}-${channel}`;
-  };
-
-  const setFingeringOverride = (midi: number, time: number, channel: number, btnId: string) => {
-    const key = getNoteKey(midi, time, channel);
-    setFingeringOverrides(prev => ({ ...prev, [key]: btnId }));
-    
-    // Immediate visual update if paused
-    if (!isPlaying) {
-      // Re-run sync to reflect change immediately
-      setTimeout(() => seek(currentTime), 0);
-    }
-  };
 
   const setOctaveShift = (val: number) => {
     setOctaveShiftState(val);
@@ -96,14 +214,20 @@ export const useMidiPlayer = (
     audioController.stopAllNotes();
   };
 
+  const setSemitoneShift = (val: number) => {
+    setSemitoneShiftState(val);
+    semitoneShiftRef.current = val;
+    activeScrubbingNotes.current.clear(); // Fix desync
+    audioController.stopAllNotes();
+  };
+
   const cycleChannelMode = (channel: number) => {
     setChannelModes(prev => {
       const current = prev[channel] || 'muted';
-      let next: ChannelMode = 'both';
-      if (current === 'both') next = 'bass';
-      else if (current === 'bass') next = 'treble';
-      else if (current === 'treble') next = 'muted';
-      else next = 'both';
+      let next: ChannelMode = 'treble';
+      if (current === 'muted') next = 'treble';
+      else if (current === 'treble') next = 'bass';
+      else next = 'muted';
 
       activeScrubbingNotes.current.clear(); // Fix desync
       audioController.stopAllNotes();
@@ -222,7 +346,7 @@ export const useMidiPlayer = (
 
     setAvailableChannels(Array.from(foundChannels).sort((a, b) => a - b));
     const initialModes: Record<number, ChannelMode> = {};
-    foundChannels.forEach(ch => { initialModes[ch] = 'both'; });
+    foundChannels.forEach(ch => { initialModes[ch] = 'treble'; });
     setChannelModes(initialModes);
 
     events.sort((a, b) => {
@@ -274,11 +398,12 @@ export const useMidiPlayer = (
        const mode = e.channel !== undefined ? (channelModes[e.channel] || 'muted') : 'both';
        if (mode === 'muted') return;
        
-       const shiftedMidi = e.midi! + (octaveShiftRef.current * 12);
+       // Apply Octave AND Semitone Shift
+       const shiftedMidi = e.midi! + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
        
        // Check Override
        const key = getNoteKey(e.midi!, e.time, e.channel || 0);
-       const overrideId = fingeringOverrides[key];
+       const overrideId = fingeringOverridesRef.current[key];
 
        let validIds: string[] = [];
 
@@ -353,7 +478,8 @@ export const useMidiPlayer = (
     // 3. Play Selected Buttons
     bestAssignment.forEach((btnId, idx) => {
         const event = notesToSolve[idx].event;
-        const shiftedMidi = event.midi! + (octaveShiftRef.current * 12);
+        // Apply Shifts
+        const shiftedMidi = event.midi! + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
         
         // Store btnId AND channel
         activeMidiMapping.current.set(event.midi!, { btnId, channel: event.channel || 0 });
@@ -513,7 +639,8 @@ export const useMidiPlayer = (
     allNotes.forEach(note => {
       // Check if note overlaps current time
       if (time >= note.time && time < note.time + note.duration) {
-        const shiftedMidi = note.midi + (octaveShiftRef.current * 12);
+        // Apply Shifts
+        const shiftedMidi = note.midi + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
         
         const mode = channelModes[note.channel] || 'muted';
         if (mode === 'muted') return;
@@ -533,7 +660,7 @@ export const useMidiPlayer = (
 
         // Determine Primary Button
         const key = getNoteKey(note.midi, note.time, note.channel);
-        let primaryId = fingeringOverrides[key];
+        let primaryId = fingeringOverridesRef.current[key];
 
         // If override is invalid or missing, default to first candidate (or heuristic)
         if (!primaryId || !candidates.includes(primaryId)) {
@@ -621,9 +748,11 @@ export const useMidiPlayer = (
     
     setBpm(project.bpm);
     setOctaveShift(project.octaveShift);
+    setSemitoneShift(project.semitoneShift || 0); // Load Semitone
     setChannelModes(project.channelModes);
     updateDirections(project.directionEvents);
-    setFingeringOverrides(project.fingeringOverrides || {}); // Restore overrides
+    setFingeringOverrides(project.fingeringOverrides || {});
+    fingeringOverridesRef.current = project.fingeringOverrides || {}; // Restore overrides to Ref
   };
 
   const getProjectState = (): Omit<MidiProject, 'id' | 'name' | 'lastModified'> | null => {
@@ -632,6 +761,7 @@ export const useMidiPlayer = (
       midiBase64: rawMidiBase64,
       bpm,
       octaveShift,
+      semitoneShift, // Save Semitone
       channelModes,
       directionEvents,
       fingeringOverrides // Save overrides
@@ -655,6 +785,8 @@ export const useMidiPlayer = (
     seek,
     octaveShift,
     setOctaveShift,
+    semitoneShift, // Export
+    setSemitoneShift, // Export
     directionEvents,
     updateDirections,
     isScrubbingSoundEnabled,
@@ -663,6 +795,10 @@ export const useMidiPlayer = (
     loadProject,
     getProjectState,
     alternativeButtons,
-    setFingeringOverride
+    setFingeringOverride,
+    editingNote,
+    selectNote,
+    clearSelection,
+    flashingNotes
   };
 };

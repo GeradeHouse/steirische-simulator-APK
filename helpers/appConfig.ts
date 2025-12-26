@@ -3,7 +3,7 @@ import { SoundSettings } from '../types';
 
 export const STORAGE_KEY_LAYOUT = 'steirische_layout_v1';
 export const STORAGE_KEY_SOUND = 'steirische_sound_v1';
-export const FILENAME = 'accordion_line_drawing.jpg';
+export const FILENAME = 'accordion_line_drawing.png';
 
 // Paths to try sequentially if one fails
 export const CANDIDATE_PATHS = [
@@ -24,3 +24,7 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
   tubeSaturation: 0, inputGain: 0.5, trebleStereoWidth: 0.3, bassStereoWidth: 0.1, reverbSize: 1.5, reverbMix: 0.1,
   eqLow: 0, eqMid: 0, eqHigh: 0, masterVolume: 0.4
 };
+
+// Layout Split Constants (Percentages of original image width)
+export const SPLIT_LEFT_LIMIT = 21.5; // Bass section ends at 21.5%
+export const SPLIT_RIGHT_START = 76.0; // Treble section starts at 76.0%

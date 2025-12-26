@@ -14,6 +14,7 @@ interface Props {
   idLabel?: string;
   isAlternative?: boolean;
   onAlternativeClick?: () => void;
+  showTooltips?: boolean;
   onPlay: (note: NoteDefinition, direction: Direction) => void;
   onStop: () => void;
   onDragStart: (e: React.MouseEvent | React.TouchEvent) => void;
@@ -44,6 +45,7 @@ export const AccordionButton: React.FC<Props> = ({
   idLabel,
   isAlternative,
   onAlternativeClick,
+  showTooltips = true,
   onPlay,
   onStop,
   onDragStart,
@@ -71,7 +73,7 @@ export const AccordionButton: React.FC<Props> = ({
 
   const markedClass = (!isEditing && isMarked) ? 'ring-2 ring-red-400/50 ring-offset-1 ring-offset-transparent' : '';
 
-  const textSize = isBass ? "text-[0.55rem] leading-tight" : "text-[0.6rem] leading-tight";
+  const textSize = isBass ? "text-[0.45rem] leading-tight" : "text-[0.5rem] leading-tight";
   const textBase = `w-full h-full flex justify-center text-black font-medium ${textSize}`;
 
   // Active State Visuals
@@ -259,7 +261,7 @@ export const AccordionButton: React.FC<Props> = ({
       </div>
       
       {/* Active Note Pop-up (Debounced) */}
-      {showTooltip && !isEditing && (
+      {showTooltip && showTooltips && !isEditing && (
         <div 
             className="absolute z-50 pointer-events-none select-none"
             style={{ 

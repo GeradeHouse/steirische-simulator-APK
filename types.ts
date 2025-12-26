@@ -87,6 +87,7 @@ export interface MidiProject {
   midiBase64: string;
   bpm: number;
   octaveShift: number;
+  semitoneShift: number; // Added
   channelModes: Record<number, 'both' | 'bass' | 'treble' | 'muted'>;
   directionEvents: SavedDirectionEvent[];
   fingeringOverrides?: Record<string, string>; // Key: "midi-time-channel", Value: buttonId

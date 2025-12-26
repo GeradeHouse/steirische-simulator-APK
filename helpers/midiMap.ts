@@ -47,3 +47,7 @@ const buildMaps = () => {
   processRows(BASS_ROWS, 'bass');
   processRows(TREBLE_ROWS, 'treble');
 };
+
+export const getNoteKey = (midi: number, time: number, channel: number) => {
+  return `${midi}-${time.toFixed(3)}-${channel}`;
+};
