@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MidiProject } from '../types';
 import { getProjectList, saveProject, loadProject, deleteProject } from '../helpers/projectStorage';
-import { TrashIcon, ArrowDownTrayIcon, FolderOpenIcon, PlusIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { TrashIcon, ArrowDownTrayIcon, FolderOpenIcon, PlusIcon, ArrowPathIcon, ArrowUpOnSquareIcon } from '@heroicons/react/24/outline';
 
 interface Props {
   player: any; // ReturnType<typeof useMidiPlayer>
@@ -11,10 +11,20 @@ export const ProjectLibrary: React.FC<Props> = ({ player }) => {
   const [projects, setProjects] = useState<{ id: string; name: string; lastModified: number }[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     refreshList();
   }, []);
+
+  // Reset Auto Save to true when a new project is loaded
+  useEffect(() => {
+    if (player.currentProjectId) {
+      player.setIsAutoSaveEnabled(true);
+    }
+  }, [player.currentProjectId]);
+
+  // Auto-Save Logic removed (moved to App.tsx)
 
   const refreshList = () => {
     setProjects(getProjectList().sort((a, b) => b.lastModified - a.lastModified));
@@ -64,11 +74,45 @@ export const ProjectLibrary: React.FC<Props> = ({ player }) => {
         MIDI Projects
       </h3>
 
+      {/* Import MIDI File */}
+      <input
+        type="file"
+        accept=".mid,.midi"
+        ref={fileInputRef}
+        className="hidden"
+        onChange={(e) => {
+          if (e.target.files?.[0]) {
+            player.loadMidiFile(e.target.files[0]);
+            e.target.value = ''; // Reset
+          }
+        }}
+      />
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="mb-4 w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-700 text-xs font-bold py-2 rounded hover:bg-gray-200 border border-gray-200"
+      >
+        <ArrowUpOnSquareIcon className="w-4 h-4" />
+        Import MIDI File
+      </button>
+
       {/* Save Controls */}
       {player.fileName && (
         <div className="mb-4 p-3 bg-indigo-50 rounded border border-indigo-100">
-          <div className="text-xs font-bold text-indigo-800 mb-2 truncate">
-            Current: {player.fileName}
+          <div className="flex justify-between items-start mb-2">
+            <div className="text-xs font-bold text-indigo-800 truncate max-w-[150px]">
+              Current: {player.fileName}
+            </div>
+            {player.currentProjectId && (
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={player.isAutoSaveEnabled}
+                  onChange={(e) => player.setIsAutoSaveEnabled(e.target.checked)}
+                  className="w-3 h-3 accent-indigo-600 rounded"
+                />
+                <span className="text-[10px] font-bold text-indigo-600">Auto Save</span>
+              </label>
+            )}
           </div>
           
           {isSaving ? (

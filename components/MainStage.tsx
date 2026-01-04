@@ -51,6 +51,8 @@ interface MainStageProps {
     onSelectNote?: (note: any) => void;
     onClearSelection?: () => void;
     flashingNotes?: Set<string>;
+    autoScrollMode?: 'treble' | 'bass' | 'off';
+    isNoteSnapEnabled?: boolean;
   };
 }
 
@@ -71,8 +73,8 @@ export const MainStage: React.FC<MainStageProps> = ({
 }) => {
   
   const isAndroid = Capacitor.getPlatform() === 'android';
-  const TREBLE_BTN_SIZE = isAndroid ? 4.5 : 3.4;
-  const BASS_BTN_SIZE = 4.3;
+  const TREBLE_BTN_SIZE = isAndroid ? 5.8 : 3.4;
+  const BASS_BTN_SIZE = isAndroid ? 5.9 : 4.3;
 
   // Adjust split start for Android (wider image: ~31.7% width vs 24%)
   const effectiveSplitRightStart = isAndroid ? 68.3 : SPLIT_RIGHT_START;
@@ -129,9 +131,9 @@ export const MainStage: React.FC<MainStageProps> = ({
       localLeft = (globalLeft / SPLIT_LEFT_LIMIT) * 100;
       localSize = (size / SPLIT_LEFT_LIMIT) * 100;
     } else {
-      // Map SPLIT_RIGHT_START -> 100 to 0 -> 100%
-      const rightWidth = 100 - SPLIT_RIGHT_START;
-      localLeft = ((globalLeft - SPLIT_RIGHT_START) / rightWidth) * 100;
+      // Map effectiveSplitRightStart -> 100 to 0 -> 100%
+      const rightWidth = 100 - effectiveSplitRightStart;
+      localLeft = ((globalLeft - effectiveSplitRightStart) / rightWidth) * 100;
       localSize = (size / rightWidth) * 100;
     }
 
@@ -162,18 +164,28 @@ export const MainStage: React.FC<MainStageProps> = ({
     const panel = isBassPanel ? 'left' : 'right';
     const style = transformStyle(id, pos.left, pos.top, size, panel);
 
+    // Gleichtone (Unison) Buttons
+    const GLEICHTONE_IDS = new Set(['treble-0-4', 'treble-1-5', 'treble-2-6', 'treble-3-6']);
+    const isGleichton = GLEICHTONE_IDS.has(id);
+
     const handleAlternativeClick = () => {
         if (!midiData?.onFingeringOverride) return;
         const currentMidiNote = midiData.notes.find(n => {
             const start = n.time;
             const end = n.time + n.duration;
             const t = midiData.currentTime;
-            if (t >= start && t < end) {
-                const shifted = n.midi + (midiData.octaveShift * 12);
-                const noteDef = direction === Direction.PUSH ? mapping.push : mapping.pull;
-                return shifted === noteDef.midi;
-            }
-            return false;
+            
+            // Check time overlap
+            if (t < start || t >= end) return false;
+
+            // Check visibility (channel mode)
+            const mode = midiData.channelModes[n.channel] || 'muted';
+            if (mode === 'muted' || mode === 'hidden') return false;
+
+            // Check pitch match (including semitone shift)
+            const shifted = n.midi + (midiData.octaveShift * 12) + midiData.semitoneShift;
+            const noteDef = direction === Direction.PUSH ? mapping.push : mapping.pull;
+            return shifted === noteDef.midi;
         });
         if (currentMidiNote) {
             midiData.onFingeringOverride(currentMidiNote.midi, currentMidiNote.time, currentMidiNote.channel, id);
@@ -193,6 +205,7 @@ export const MainStage: React.FC<MainStageProps> = ({
         isEditing={isEditing}
         idLabel={isEditing ? id : undefined}
         isAlternative={isAlternative}
+        isGleichton={isGleichton}
         onAlternativeClick={handleAlternativeClick}
         showTooltips={showTooltips}
         style={style}
@@ -219,9 +232,9 @@ export const MainStage: React.FC<MainStageProps> = ({
         
         {/* --- LEFT PANEL (Bass) --- */}
         <div className="relative h-full flex-none">
-          <img 
-            src="assets/ui_bass.png" 
-            alt="Bass Section" 
+          <img
+            src={isAndroid ? "assets/ui_bass_apk.png" : "assets/ui_bass.png"}
+            alt="Bass Section"
             className="h-full w-auto object-contain pointer-events-none select-none"
           />
           {/* Overlay for Buttons */}
@@ -247,7 +260,7 @@ export const MainStage: React.FC<MainStageProps> = ({
           
           {/* Piano Roll Container */}
           {midiData && (
-            <div className={`absolute ${Capacitor.getPlatform() === 'android' ? 'top-[8%] bottom-[8%]' : 'top-[18%] bottom-[18%]'} left-0 right-0 z-0 opacity-90 shadow-inner`}>
+            <div className={`absolute ${Capacitor.getPlatform() === 'android' ? 'top-[4%] bottom-[12%]' : 'top-[18%] bottom-[18%]'} left-0 right-0 z-0 opacity-90 shadow-inner`}>
                <PianoRoll
                   notes={midiData.notes}
                   currentTime={midiData.currentTime}
@@ -265,6 +278,8 @@ export const MainStage: React.FC<MainStageProps> = ({
                   onSelectNote={midiData.onSelectNote}
                   onClearSelection={midiData.onClearSelection}
                   flashingNotes={midiData.flashingNotes}
+                  autoScrollMode={midiData.autoScrollMode}
+                  isNoteSnapEnabled={midiData.isNoteSnapEnabled}
                 />
             </div>
           )}
@@ -272,9 +287,9 @@ export const MainStage: React.FC<MainStageProps> = ({
 
         {/* --- RIGHT PANEL (Treble) --- */}
         <div className="relative h-full flex-none">
-          <img 
-            src="assets/ui_trebble.png" 
-            alt="Treble Section" 
+          <img
+            src={isAndroid ? "assets/ui_trebble_apk.png" : "assets/ui_trebble.png"}
+            alt="Treble Section"
             className="h-full w-auto object-contain pointer-events-none select-none"
           />
           {/* Overlay for Buttons */}

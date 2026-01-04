@@ -1,19 +1,45 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import {
   PlayIcon, PauseIcon, StopIcon, FolderOpenIcon,
   PlusIcon, MinusIcon, SpeakerWaveIcon, SpeakerXMarkIcon,
-  ChevronUpIcon, ChevronDownIcon, ChatBubbleLeftEllipsisIcon
+  ChevronUpIcon, ChevronDownIcon, ChatBubbleLeftEllipsisIcon, ArrowsUpDownIcon, BoltIcon
 } from '@heroicons/react/24/solid';
 
 interface Props {
   player: any; // ReturnType<typeof useMidiPlayer>
   showTooltips: boolean;
   onToggleTooltips: () => void;
+  onOpenLibrary: () => void;
 }
 
-export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTooltips }) => {
-  const fileInput = useRef<HTMLInputElement>(null);
+export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTooltips, onOpenLibrary }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
+  const pressTimer = React.useRef<any>(null);
+  const isLongPress = React.useRef(false);
+
+  const handlePressStart = (ch: number) => {
+    isLongPress.current = false;
+    pressTimer.current = setTimeout(() => {
+        isLongPress.current = true;
+        if (window.confirm(`Delete Channel ${ch + 1}? This action cannot be undone.`)) {
+            player.deleteChannel(ch);
+        }
+    }, 800);
+  };
+
+  const handlePressEnd = () => {
+    if (pressTimer.current) {
+        clearTimeout(pressTimer.current);
+        pressTimer.current = null;
+    }
+  };
+
+  const handleChannelClick = (ch: number) => {
+    if (isLongPress.current) return;
+    player.cycleChannelMode(ch);
+  };
 
   const formatTime = (t: number) => {
     const m = Math.floor(t / 60);
@@ -22,7 +48,7 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
   };
 
   return (
-    <div className="absolute bottom-1 left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-gray-300 p-2 rounded-2xl shadow-xl flex items-center gap-3 z-50 transition-all duration-300 max-w-[98vw] overflow-x-auto scrollbar-hide">
+    <div className={`absolute left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-gray-300 p-2 rounded-2xl shadow-xl flex items-center gap-3 z-50 transition-all duration-300 max-w-[98vw] overflow-x-auto scrollbar-hide ${isInputFocused ? 'bottom-1/2' : 'bottom-1'}`}>
       
       {/* --- Transport (Always Visible) --- */}
       <div className="flex items-center gap-2 flex-none">
@@ -49,16 +75,9 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
       {/* --- Expanded Controls --- */}
       {isExpanded && (
         <div className="flex items-center gap-3 animate-in fade-in slide-in-from-left-2 duration-200">
-          {/* File Upload */}
-          <input
-            type="file"
-            accept=".mid,.midi"
-            ref={fileInput}
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && player.loadMidiFile(e.target.files[0])}
-          />
+          {/* Library / Load Button */}
           <button
-            onClick={() => fileInput.current?.click()}
+            onClick={onOpenLibrary}
             className="flex items-center gap-2 text-xs font-bold text-gray-600 hover:text-indigo-600 whitespace-nowrap"
           >
             <FolderOpenIcon className="w-5 h-5" />
@@ -77,12 +96,19 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
                   let bgClass = 'bg-gray-200 text-gray-500';
                   if (mode === 'bass') bgClass = 'bg-purple-600 text-white';
                   else if (mode === 'treble') bgClass = 'bg-green-600 text-white';
+                  else if (mode === 'hidden') bgClass = 'bg-gray-800 text-gray-400 line-through';
 
                   return (
                     <button
                       key={ch}
-                      onClick={() => player.cycleChannelMode(ch)}
-                      className={`w-5 h-5 text-[9px] rounded flex items-center justify-center font-bold ${bgClass}`}
+                      onMouseDown={() => handlePressStart(ch)}
+                      onMouseUp={handlePressEnd}
+                      onMouseLeave={handlePressEnd}
+                      onTouchStart={() => handlePressStart(ch)}
+                      onTouchEnd={handlePressEnd}
+                      onClick={() => handleChannelClick(ch)}
+                      onContextMenu={(e) => e.preventDefault()}
+                      className={`w-5 h-5 text-[9px] rounded flex items-center justify-center font-bold select-none touch-none ${bgClass}`}
                     >
                       {ch + 1}
                     </button>
@@ -106,6 +132,11 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
               type="number"
               value={player.bpm}
               onChange={(e) => player.setBpm(Number(e.target.value))}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
+              onTouchStart={() => setIsInputFocused(true)}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+              enterKeyHint="done"
               className="w-10 px-1 py-0.5 border rounded text-xs text-center"
             />
           </div>
@@ -141,6 +172,33 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
             title="Toggle Scrubbing Sound"
           >
             {player.isScrubbingSoundEnabled ? <SpeakerWaveIcon className="w-4 h-4" /> : <SpeakerXMarkIcon className="w-4 h-4" />}
+          </button>
+
+          {/* Auto Scroll Toggle */}
+          <button
+            onClick={player.cycleAutoScrollMode}
+            className={`p-1.5 rounded-full transition-colors flex items-center gap-1 ${
+              player.autoScrollMode === 'treble' ? 'bg-green-100 text-green-700' :
+              player.autoScrollMode === 'bass' ? 'bg-purple-100 text-purple-700' :
+              'text-gray-400 hover:bg-gray-100'
+            }`}
+            title={`Auto Scroll: ${player.autoScrollMode ? player.autoScrollMode.charAt(0).toUpperCase() + player.autoScrollMode.slice(1) : 'Off'}`}
+          >
+            <ArrowsUpDownIcon className="w-4 h-4" />
+            <span className="text-[9px] font-bold uppercase w-3 text-center">
+                {player.autoScrollMode === 'treble' ? 'T' : player.autoScrollMode === 'bass' ? 'B' : ''}
+            </span>
+          </button>
+
+          {/* Snap Toggle */}
+          <button
+            onClick={() => player.setIsNoteSnapEnabled(!player.isNoteSnapEnabled)}
+            className={`p-1.5 rounded-full transition-colors ${
+              player.isNoteSnapEnabled ? 'bg-indigo-100 text-indigo-600' : 'text-gray-400 hover:bg-gray-100'
+            }`}
+            title="Toggle Note Snap"
+          >
+            <BoltIcon className="w-4 h-4" />
           </button>
 
           {/* Tooltips Toggle */}

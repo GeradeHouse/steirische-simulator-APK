@@ -3,7 +3,8 @@ import { MidiNote, DirectionEvent } from '../hooks/useMidiPlayer';
 import { ChannelMode } from '../hooks/useMidiPlayer';
 import { Direction } from '../types';
 import { getButtonIdsForNote, getNoteKey } from '../helpers/midiMap';
-import { ArrowRightIcon, ArrowLeftIcon, ExclamationTriangleIcon } from '@heroicons/react/24/solid';
+import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
+import { ArrowRightIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
 
 interface Props {
   notes: MidiNote[];
@@ -22,6 +23,8 @@ interface Props {
   onSelectNote?: (note: MidiNote) => void;
   onClearSelection?: () => void;
   flashingNotes?: Set<string>;
+  autoScrollMode?: 'treble' | 'bass' | 'off';
+  isNoteSnapEnabled?: boolean;
 }
 
 // --- Hand-Drawn Note Component ---
@@ -117,6 +120,7 @@ export const PianoRoll: React.FC<Props> = ({
   currentTime,
   isPlaying,
   channelModes,
+  direction,
   onSeek,
   octaveShift,
   semitoneShift,
@@ -127,7 +131,9 @@ export const PianoRoll: React.FC<Props> = ({
   editingNote,
   onSelectNote,
   onClearSelection,
-  flashingNotes
+  flashingNotes,
+  autoScrollMode,
+  isNoteSnapEnabled
 }) => {
   // Configuration
   const PX_PER_SEC = 150;
@@ -176,12 +182,16 @@ export const PianoRoll: React.FC<Props> = ({
   // --- Data Processing ---
 
   const visibleNotes = useMemo(() => {
-    return notes; // Show all notes including muted (visualized as grey)
-  }, [notes]);
+    return notes.filter(n => {
+      const mode = channelModes[n.channel] || 'muted';
+      return mode !== 'hidden';
+    });
+  }, [notes, channelModes]);
 
   // Playback Auto-Scroll (Smooth Look-ahead)
   useEffect(() => {
     if (!isPlaying || !scrollContainerRef.current) return;
+    if (autoScrollMode === 'off' || !autoScrollMode) return;
 
     const LOOK_AHEAD = 1.8; // Look 1.8 seconds ahead (more proactive)
     const PADDING = 50;     // Pixels from top
@@ -191,7 +201,7 @@ export const PianoRoll: React.FC<Props> = ({
     const relevantNotes = visibleNotes.filter(n =>
       n.time < currentTime + LOOK_AHEAD &&
       (n.time + n.duration) > currentTime &&
-      channelModes[n.channel] === 'treble' // Only scroll for treble notes
+      channelModes[n.channel] === autoScrollMode // 'treble' or 'bass' matches channel mode
     );
 
     if (relevantNotes.length === 0) return;
@@ -223,23 +233,38 @@ export const PianoRoll: React.FC<Props> = ({
     if (Math.abs(diff) > 1.0) {
        container.scrollTop = currentScroll + (diff * SMOOTHING);
     }
-  }, [currentTime, isPlaying, visibleNotes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT]);
+  }, [currentTime, isPlaying, visibleNotes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT, autoScrollMode, channelModes]);
 
   const arrowGroups = useMemo(() => {
-    const groups: { time: number, lowestMidi: number, notes: MidiNote[] }[] = [];
+    // Structure: time -> { bassMin, trebleMin }
+    const groups: { time: number, bassMin: number | null, trebleMin: number | null }[] = [];
     const sorted = [...visibleNotes].sort((a, b) => a.time - b.time);
     
     sorted.forEach(note => {
+      const mode = channelModes[note.channel] || 'muted';
+      if (mode === 'muted') return;
+
       const lastGroup = groups[groups.length - 1];
+      const isBass = mode === 'bass';
+      
+      // Group with last if within tolerance
       if (lastGroup && Math.abs(note.time - lastGroup.time) < 0.02) {
-        lastGroup.notes.push(note);
-        lastGroup.lowestMidi = Math.min(lastGroup.lowestMidi, note.midi);
+        if (isBass) {
+            lastGroup.bassMin = lastGroup.bassMin === null ? note.midi : Math.min(lastGroup.bassMin, note.midi);
+        } else {
+            lastGroup.trebleMin = lastGroup.trebleMin === null ? note.midi : Math.min(lastGroup.trebleMin, note.midi);
+        }
       } else {
-        groups.push({ time: note.time, lowestMidi: note.midi, notes: [note] });
+        // Create new group
+        groups.push({
+            time: note.time,
+            bassMin: isBass ? note.midi : null,
+            trebleMin: !isBass ? note.midi : null
+        });
       }
     });
     return groups;
-  }, [visibleNotes]);
+  }, [visibleNotes, channelModes]);
 
   const getDirectionAtTime = (time: number) => {
     let dir = Direction.PUSH;
@@ -330,17 +355,55 @@ export const PianoRoll: React.FC<Props> = ({
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging || !dragStartRef.current) return;
-      e.preventDefault(); // Prevent selection/scroll while dragging
+      e.preventDefault();
       const dx = e.clientX - dragStartRef.current.x;
-      const newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+      let newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+
+      if (isNoteSnapEnabled) {
+          const SNAP_WINDOW = 0.15;
+          let bestTime = newTime;
+          let minDiff = SNAP_WINDOW;
+          
+          for (const note of visibleNotes) {
+              if (note.time > newTime + SNAP_WINDOW) break;
+              if (note.time < newTime - SNAP_WINDOW) continue;
+              
+              const diff = Math.abs(note.time - newTime);
+              if (diff < minDiff) {
+                  minDiff = diff;
+                  bestTime = note.time;
+              }
+          }
+          newTime = bestTime;
+      }
+
       onSeekRef.current(newTime);
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!isDragging || !dragStartRef.current) return;
-      e.preventDefault(); // Prevent scrolling while scrubbing
+      e.preventDefault();
       const dx = e.touches[0].clientX - dragStartRef.current.x;
-      const newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+      let newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+
+      if (isNoteSnapEnabled) {
+          const SNAP_WINDOW = 0.15;
+          let bestTime = newTime;
+          let minDiff = SNAP_WINDOW;
+          
+          for (const note of visibleNotes) {
+              if (note.time > newTime + SNAP_WINDOW) break;
+              if (note.time < newTime - SNAP_WINDOW) continue;
+              
+              const diff = Math.abs(note.time - newTime);
+              if (diff < minDiff) {
+                  minDiff = diff;
+                  bestTime = note.time;
+              }
+          }
+          newTime = bestTime;
+      }
+
       onSeekRef.current(newTime);
     };
 
@@ -361,7 +424,7 @@ export const PianoRoll: React.FC<Props> = ({
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleEnd);
     };
-  }, [isDragging, PX_PER_SEC]);
+  }, [isDragging, PX_PER_SEC, isNoteSnapEnabled, visibleNotes]);
 
   const rows = useMemo(() => {
     const r = [];
@@ -454,7 +517,12 @@ export const PianoRoll: React.FC<Props> = ({
                 
                 const noteDir = getDirectionAtTime(note.time);
                 const mode = channelModes[note.channel] || 'muted';
-                const hasMapping = getButtonIdsForNote(shiftedMidi, noteDir).length > 0;
+                const allIds = getButtonIdsForNote(shiftedMidi, noteDir);
+                const hasMapping = allIds.some(id => {
+                  if (mode === 'treble') return id.startsWith('treble');
+                  if (mode === 'bass') return id.startsWith('bass');
+                  return true;
+                });
                 const highlightKey = `${shiftedMidi}-${noteDir}`;
                 const isUnderPlayhead = currentTime >= note.time && currentTime < (note.time + note.duration);
                 const isHighlighted = activeMidiHighlights?.has(highlightKey) && isUnderPlayhead;
@@ -479,7 +547,7 @@ export const PianoRoll: React.FC<Props> = ({
                       top: `${top}px`,
                       width: `${width}px`,
                       height: `${NOTE_HEIGHT}px`,
-                      zIndex: isEditing || isFlashing ? 50 : 10
+                      zIndex: (isEditing || isFlashing) ? 50 : (mode === 'treble' || mode === 'bass' ? 20 : 10)
                     }}
                     onMouseDown={(e) => handleNoteMouseDown(e, note, noteDir)}
                     onMouseUp={(e) => handleNoteMouseUp(e, shiftedMidi, noteDir)}
@@ -502,30 +570,49 @@ export const PianoRoll: React.FC<Props> = ({
 
               {/* Arrows */}
               {arrowGroups.map((group) => {
-                  const left = group.time * PX_PER_SEC;
-                  const shiftedMidi = group.lowestMidi + (octaveShift * 12) + semitoneShift;
-                  const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT; 
+                  const items = [];
                   const dir = getDirectionAtTime(group.time);
                   const isSelected = selectedTimes.has(group.time);
+                  const arrowClass = `absolute flex items-center justify-center w-6 h-6 cursor-pointer transition-transform hover:scale-125 z-20 ${isSelected ? 'text-blue-600 drop-shadow-md scale-110' : 'text-gray-800'}`;
+                  const Icon = dir === Direction.PUSH ? ArrowRightIcon : ArrowLeftIcon;
+
+                  // Render Bass Arrow
+                  if (group.bassMin !== null) {
+                      const shiftedMidi = group.bassMin + (octaveShift * 12) + semitoneShift;
+                      const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT;
+                      const left = group.time * PX_PER_SEC;
+                      items.push(
+                          <div
+                              key={`arrow-bass-${group.time}`}
+                              className={arrowClass}
+                              style={{ left: `${left}px`, top: `${top - 4}px` }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => handleArrowClick(e, group.time, dir)}
+                          >
+                             <Icon className="w-[18px] h-[18px]" strokeWidth={3} />
+                          </div>
+                      );
+                  }
+
+                  // Render Treble Arrow
+                  if (group.trebleMin !== null) {
+                      const shiftedMidi = group.trebleMin + (octaveShift * 12) + semitoneShift;
+                      const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT;
+                      const left = group.time * PX_PER_SEC;
+                      items.push(
+                          <div
+                              key={`arrow-treble-${group.time}`}
+                              className={arrowClass}
+                              style={{ left: `${left}px`, top: `${top - 4}px` }}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              onClick={(e) => handleArrowClick(e, group.time, dir)}
+                          >
+                             <Icon className="w-[18px] h-[18px]" strokeWidth={3} />
+                          </div>
+                      );
+                  }
                   
-                  return (
-                      <div
-                          key={`arrow-${group.time}`}
-                          className={`absolute flex items-center justify-center w-6 h-6 cursor-pointer transition-transform hover:scale-125 z-20 ${isSelected ? 'text-blue-600 drop-shadow-md scale-110' : 'text-gray-500 opacity-60'}`}
-                          style={{
-                              left: `${left}px`,
-                              top: `${top - 4}px`,
-                          }}
-                          onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => handleArrowClick(e, group.time, dir)}
-                      >
-                          {dir === Direction.PUSH ? (
-                              <ArrowRightIcon className="w-4 h-4" />
-                          ) : (
-                              <ArrowLeftIcon className="w-4 h-4" />
-                          )}
-                      </div>
-                  );
+                  return <React.Fragment key={`group-${group.time}`}>{items}</React.Fragment>;
               })}
            </div>
         </div>

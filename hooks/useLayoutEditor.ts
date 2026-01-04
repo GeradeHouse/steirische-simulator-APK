@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, RefObject } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { LayoutMap } from '../types';
 import { STORAGE_KEY_LAYOUT } from '../helpers/appConfig';
 import { generateDefaultLayout } from '../helpers/layoutGenerator';
@@ -11,17 +12,20 @@ export const useLayoutEditor = (containerRef: RefObject<HTMLDivElement>) => {
 
   // Initialize Layout
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_LAYOUT);
-    if (saved) {
-      try {
-        setLayout(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to parse saved layout, reverting to default.");
-        setLayout(generateDefaultLayout());
+    const initLayout = async () => {
+      const saved = localStorage.getItem(STORAGE_KEY_LAYOUT);
+      if (saved) {
+        try {
+          setLayout(JSON.parse(saved));
+        } catch (e) {
+          console.error("Failed to parse saved layout, reverting to default.");
+          setLayout(await generateDefaultLayout());
+        }
+      } else {
+        setLayout(await generateDefaultLayout());
       }
-    } else {
-      setLayout(generateDefaultLayout());
-    }
+    };
+    initLayout();
   }, []);
 
   // Drag Handlers
@@ -121,9 +125,9 @@ export const useLayoutEditor = (containerRef: RefObject<HTMLDivElement>) => {
     setSelectedButtonId(null);
   };
 
-  const resetLayout = () => {
+  const resetLayout = async () => {
     if (confirm("Are you sure you want to reset the layout?")) {
-      const def = generateDefaultLayout();
+      const def = await generateDefaultLayout();
       setLayout(def);
       localStorage.setItem(STORAGE_KEY_LAYOUT, JSON.stringify(def));
     }
@@ -149,13 +153,42 @@ export const useLayoutEditor = (containerRef: RefObject<HTMLDivElement>) => {
     reader.readAsText(file);
   };
 
-  const handleExportLayout = () => {
+  const handleExportLayout = async () => {
+    const isAndroid = Capacitor.getPlatform() === 'android';
+    const fileName = isAndroid ? 'layout_apk.json' : 'layout.json';
     const dataStr = JSON.stringify(layout, null, 2);
+
+    if (isAndroid) {
+      try {
+        const file = new File([dataStr], fileName, { type: 'application/json' });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: 'Steirische Layout Export',
+            text: 'Layout configuration for Android.'
+          });
+          return;
+        }
+      } catch (e) {
+        console.error("Share failed", e);
+      }
+      
+      // Fallback to clipboard
+      try {
+        await navigator.clipboard.writeText(dataStr);
+        alert(`Export failed. JSON copied to clipboard instead! Save as ${fileName}.`);
+      } catch (e) {
+        alert("Export failed. Could not share or copy to clipboard.");
+      }
+      return;
+    }
+
+    // Web Download
     const blob = new Blob([dataStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'layout.json';
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

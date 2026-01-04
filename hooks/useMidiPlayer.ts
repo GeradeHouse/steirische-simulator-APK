@@ -4,7 +4,7 @@ import { Direction, MidiProject, SavedDirectionEvent } from '../types';
 import { getButtonIdForNote, getButtonIdsForNote, getNoteKey } from '../helpers/midiMap';
 import { BASS_ROWS } from '../constants';
 
-export type ChannelMode = 'both' | 'bass' | 'treble' | 'muted';
+export type ChannelMode = 'both' | 'bass' | 'treble' | 'muted' | 'hidden';
 
 export interface MidiNote {
   midi: number;
@@ -55,12 +55,23 @@ export const useMidiPlayer = (
   // Project Storage State
   const [rawMidiBase64, setRawMidiBase64] = useState<string | null>(null);
   const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+  const [isAutoSaveEnabled, setIsAutoSaveEnabled] = useState(true);
 
   // New: Fingering Override State
   const [fingeringOverrides, setFingeringOverrides] = useState<Record<string, string>>({});
   const fingeringOverridesRef = useRef<Record<string, string>>({});
   const [flashingNotes, setFlashingNotes] = useState<Set<string>>(new Set()); // Visual feedback
   const [alternativeButtons, setAlternativeButtons] = useState<Set<string>>(new Set());
+  const [autoScrollMode, setAutoScrollMode] = useState<'treble' | 'bass' | 'off'>('treble');
+  const [isNoteSnapEnabled, setIsNoteSnapEnabled] = useState(false);
+
+  const cycleAutoScrollMode = () => {
+    setAutoScrollMode(prev => {
+      if (prev === 'treble') return 'bass';
+      if (prev === 'bass') return 'off';
+      return 'treble';
+    });
+  };
 
   useEffect(() => {
     fingeringOverridesRef.current = fingeringOverrides;
@@ -188,7 +199,8 @@ export const useMidiPlayer = (
     }
 
     setIsPlaying(false);
-    seek(note.time);
+    // Seek slightly into the note (50ms) to avoid start-boundary overlaps with previous notes
+    seek(note.time + 0.05);
     setEditingNote({ midi: note.midi, time: note.time, channel: note.channel });
   };
 
@@ -227,7 +239,8 @@ export const useMidiPlayer = (
       let next: ChannelMode = 'treble';
       if (current === 'muted') next = 'treble';
       else if (current === 'treble') next = 'bass';
-      else next = 'muted';
+      else if (current === 'bass') next = 'hidden';
+      else next = 'muted'; // from hidden back to muted
 
       activeScrubbingNotes.current.clear(); // Fix desync
       audioController.stopAllNotes();
@@ -346,7 +359,7 @@ export const useMidiPlayer = (
 
     setAvailableChannels(Array.from(foundChannels).sort((a, b) => a - b));
     const initialModes: Record<number, ChannelMode> = {};
-    foundChannels.forEach(ch => { initialModes[ch] = 'treble'; });
+    foundChannels.forEach(ch => { initialModes[ch] = 'muted'; });
     setChannelModes(initialModes);
 
     events.sort((a, b) => {
@@ -379,8 +392,70 @@ export const useMidiPlayer = (
       audioController.stopAllNotes();
     } else {
       setIsPlaying(true);
-      directionRef.current = audioController.direction; 
+      directionRef.current = audioController.direction;
       startTimeRef.current = performance.now() - (pausedTimeRef.current * 1000 * (originalBpm / bpm));
+      
+      // Stop any scrubbing notes
+      activeScrubbingNotes.current.forEach(id => audioController.handleNoteStop(id));
+      activeScrubbingNotes.current.clear();
+
+      // Rebuild activeMidiMapping if empty (e.g. after seek)
+      if (activeMidiMapping.current.size === 0) {
+         const time = pausedTimeRef.current;
+         const dir = directionRef.current;
+         
+         allNotes.forEach(note => {
+             if (time >= note.time && time < note.time + note.duration) {
+                 const mode = channelModes[note.channel] || 'muted';
+                 if (mode === 'muted' || mode === 'hidden') return;
+                 
+                 const shiftedMidi = note.midi + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
+                 const candidates = getButtonIdsForNote(shiftedMidi, dir);
+                 const validCandidates = candidates.filter(id => {
+                     const isBass = id.startsWith('bass');
+                     if (mode === 'bass' && !isBass) return false;
+                     if (mode === 'treble' && isBass) return false;
+                     return true;
+                 });
+                 
+                 if (validCandidates.length > 0) {
+                     const key = getNoteKey(note.midi, note.time, note.channel);
+                     let btnId = fingeringOverridesRef.current[key];
+                     if (!btnId || !validCandidates.includes(btnId)) btnId = validCandidates[0];
+                     activeMidiMapping.current.set(note.midi, { btnId, channel: note.channel });
+                 }
+             }
+         });
+      }
+
+      // Re-trigger all notes in mapping
+      activeMidiMapping.current.forEach((data, midi) => {
+          const shiftedMidi = midi + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
+          const isBassRow = data.btnId.startsWith('bass');
+          let type: 'bass' | 'chord' | 'treble' = 'treble';
+          let chordType = undefined;
+          
+          if (isBassRow) {
+             const [_, rStr, bStr] = data.btnId.split('-');
+             const r = parseInt(rStr);
+             const b = parseInt(bStr);
+             const def = BASS_ROWS.find(row => row.rowId === r)?.buttons[b];
+             if (def) {
+                 const noteDef = directionRef.current === Direction.PUSH ? def.push : def.pull;
+                 type = noteDef.type as any;
+                 chordType = noteDef.chordType;
+             }
+          }
+          
+          audioController.handleNoteStart(
+              data.btnId,
+              { midi: shiftedMidi, label: 'Resume' },
+              type,
+              chordType,
+              directionRef.current
+          );
+      });
+
       loop();
     }
   };
@@ -396,33 +471,32 @@ export const useMidiPlayer = (
     
     events.forEach(e => {
        const mode = e.channel !== undefined ? (channelModes[e.channel] || 'muted') : 'both';
-       if (mode === 'muted') return;
+       if (mode === 'muted' || mode === 'hidden') return;
        
        // Apply Octave AND Semitone Shift
        const shiftedMidi = e.midi! + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
        
+       // Get Candidates
+       const allIds = getButtonIdsForNote(shiftedMidi, currentDir);
+       const candidates = allIds.filter(id => {
+          const isBass = id.startsWith('bass');
+          if (mode === 'bass' && !isBass) return false;
+          if (mode === 'treble' && isBass) return false;
+          return true;
+       });
+
+       if (candidates.length === 0) return;
+
        // Check Override
        const key = getNoteKey(e.midi!, e.time, e.channel || 0);
        const overrideId = fingeringOverridesRef.current[key];
 
-       let validIds: string[] = [];
-
-       if (overrideId) {
-         // If override exists, force it as the only candidate
+       let validIds = candidates;
+       if (overrideId && candidates.includes(overrideId)) {
          validIds = [overrideId];
-       } else {
-         const allIds = getButtonIdsForNote(shiftedMidi, currentDir);
-         validIds = allIds.filter(id => {
-            const isBass = id.startsWith('bass');
-            if (mode === 'bass' && !isBass) return false;
-            if (mode === 'treble' && isBass) return false;
-            return true;
-         });
        }
        
-       if (validIds.length > 0) {
-          notesToSolve.push({ event: e, candidates: validIds });
-       }
+       notesToSolve.push({ event: e, candidates: validIds });
     });
 
     if (notesToSolve.length === 0) return;
@@ -502,6 +576,28 @@ export const useMidiPlayer = (
         
         audioController.handleNoteStart(btnId, { midi: shiftedMidi, label: 'MIDI' }, type, chordType, currentDir);
     });
+  };
+
+  const deleteChannel = (channel: number) => {
+    // 1. Stop active notes for this channel
+    activeMidiMapping.current.forEach((data, midi) => {
+      if (data.channel === channel) {
+        audioController.handleNoteStop(data.btnId);
+        activeMidiMapping.current.delete(midi);
+      }
+    });
+
+    // 2. Remove from State
+    setAvailableChannels(prev => prev.filter(c => c !== channel));
+    setChannelModes(prev => {
+      const next = { ...prev };
+      delete next[channel];
+      return next;
+    });
+    setAllNotes(prev => prev.filter(n => n.channel !== channel));
+    
+    // 3. Clean up Event Queue (keep global events or other channels)
+    eventQueue.current = eventQueue.current.filter(e => e.channel === undefined || e.channel !== channel);
   };
 
   const loop = () => {
@@ -596,21 +692,16 @@ export const useMidiPlayer = (
       }
     }
   };
-
   const syncScrubbingNotes = (time: number) => {
-    // 1. Determine Direction at this time using binary search
+    // 1. Determine Direction
     let dir = Direction.PUSH;
-    
     if (directionEvents.length > 0) {
-      // Binary search to find the last direction event at or before the current time
       let left = 0;
       let right = directionEvents.length - 1;
       let lastValidIndex = -1;
-      
       while (left <= right) {
         const mid = Math.floor((left + right) / 2);
         const event = directionEvents[mid];
-        
         if (event.time <= time + 0.001) {
           lastValidIndex = mid;
           left = mid + 1;
@@ -618,7 +709,6 @@ export const useMidiPlayer = (
           right = mid - 1;
         }
       }
-      
       if (lastValidIndex >= 0) {
         dir = directionEvents[lastValidIndex].direction;
       }
@@ -627,27 +717,21 @@ export const useMidiPlayer = (
     if (dir !== directionRef.current) {
       directionRef.current = dir;
       audioController.setDirection(dir);
-      // If direction changes, clear previous notes to avoid stuck buttons
       activeScrubbingNotes.current.forEach(id => audioController.handleNoteStop(id));
       activeScrubbingNotes.current.clear();
     }
 
-    // 2. Find Active Notes
-    const activeIds = new Set<string>();
-    const newAlternatives = new Set<string>();
-    
-    allNotes.forEach(note => {
-      // Check if note overlaps current time
-      if (time >= note.time && time < note.time + note.duration) {
-        // Apply Shifts
-        const shiftedMidi = note.midi + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
-        
-        const mode = channelModes[note.channel] || 'muted';
-        if (mode === 'muted') return;
+    // 2. Gather Notes
+    const notesToSolve: { note: MidiNote, candidates: string[], allCandidates: string[], shiftedMidi: number }[] = [];
 
+    allNotes.forEach(note => {
+      if (time >= note.time && time < note.time + note.duration - 0.03) {
+        const mode = channelModes[note.channel] || 'muted';
+        if (mode === 'muted' || mode === 'hidden') return;
+
+        const shiftedMidi = note.midi + (octaveShiftRef.current * 12) + semitoneShiftRef.current;
         const allBtnIds = getButtonIdsForNote(shiftedMidi, dir);
         
-        // Filter valid candidates
         const candidates = allBtnIds.filter(btnId => {
             const isBassBtn = btnId.startsWith('bass');
             const isTrebleBtn = btnId.startsWith('treble');
@@ -658,70 +742,153 @@ export const useMidiPlayer = (
 
         if (candidates.length === 0) return;
 
-        // Determine Primary Button
         const key = getNoteKey(note.midi, note.time, note.channel);
-        let primaryId = fingeringOverridesRef.current[key];
+        const overrideId = fingeringOverridesRef.current[key];
 
-        // If override is invalid or missing, default to first candidate (or heuristic)
-        if (!primaryId || !candidates.includes(primaryId)) {
-            primaryId = candidates[0];
+        let validIds = candidates;
+        if (overrideId && candidates.includes(overrideId)) {
+            validIds = [overrideId];
         }
 
-        activeIds.add(primaryId);
+        notesToSolve.push({ note, candidates: validIds, allCandidates: candidates, shiftedMidi });
+      }
+    });
 
-        // Mark others as alternatives
-        candidates.forEach(id => {
-            if (id !== primaryId) newAlternatives.add(id);
-        });
+    // 3. Group by Time & Sort
+    const groups = new Map<number, typeof notesToSolve>();
+    notesToSolve.forEach(item => {
+        const t = item.note.time;
+        if (!groups.has(t)) groups.set(t, []);
+        groups.get(t)!.push(item);
+    });
+    const sortedTimes = Array.from(groups.keys()).sort((a, b) => a - b);
 
-        // Play Primary
-        if (!activeScrubbingNotes.current.has(primaryId)) {
-             const isBassRow = primaryId.startsWith('bass');
-             let type: 'bass' | 'chord' | 'treble' = 'treble';
-             let chordType = undefined;
+    // 4. Incremental Solve
+    const finalAssignment: string[] = [];
+    const prevActive: string[] = Array.from(activeScrubbingNotes.current);
 
-             if (isBassRow) {
-                const [_, rStr, bStr] = primaryId.split('-');
-                const r = parseInt(rStr);
-                const b = parseInt(bStr);
-                const def = BASS_ROWS.find(row => row.rowId === r)?.buttons[b];
-                if (def) {
-                    const noteDef = dir === Direction.PUSH ? def.push : def.pull;
-                    type = noteDef.type as any;
-                    chordType = noteDef.chordType;
+    const getCost = (id1: string, id2: string) => {
+        const p1 = id1.split('-');
+        const p2 = id2.split('-');
+        if (p1[0] !== p2[0]) return 100;
+        const r1 = parseInt(p1[1]), c1 = parseInt(p1[2]);
+        const r2 = parseInt(p2[1]), c2 = parseInt(p2[2]);
+        return Math.abs(c1 - c2) + Math.abs(r1 - r2) * 4;
+    };
+
+    sortedTimes.forEach(t => {
+        const groupItems = groups.get(t)!;
+        let bestGroupCost = Infinity;
+        let bestGroupAssign: string[] = [];
+
+        const search = (idx: number, current: string[]) => {
+            if (idx === groupItems.length) {
+                let cost = 0;
+                // Internal
+                for (let i = 0; i < current.length; i++) {
+                    for (let j = i + 1; j < current.length; j++) {
+                        cost += getCost(current[i], current[j]);
+                    }
                 }
-             }
+                // External (to previously assigned in this frame)
+                for (let i = 0; i < current.length; i++) {
+                    for (const assigned of finalAssignment) {
+                        cost += getCost(current[i], assigned);
+                    }
+                }
+                // External (to prevActive - stability)
+                for (let i = 0; i < current.length; i++) {
+                    for (const active of prevActive) {
+                        cost += getCost(current[i], active);
+                    }
+                }
 
-             audioController.handleNoteStart(
-               primaryId,
-               { midi: shiftedMidi, label: 'Scrub' },
-               type,
-               chordType,
-               dir,
-               {
-                 silent: !isScrubbingSoundEnabled,
-                 duration: 2.0
-               }
-             );
-             activeScrubbingNotes.current.add(primaryId);
-        }
-      }
+                if (cost < bestGroupCost) {
+                    bestGroupCost = cost;
+                    bestGroupAssign = [...current];
+                }
+                return;
+            }
+
+            const candidates = groupItems[idx].candidates;
+            for (const cand of candidates) {
+                current.push(cand);
+                search(idx + 1, current);
+                current.pop();
+            }
+        };
+
+        search(0, []);
+        finalAssignment.push(...bestGroupAssign);
     });
 
-    setAlternativeButtons(newAlternatives);
+    // 5. Sync & Alternatives
+    const nextActiveIds = new Set<string>(finalAssignment);
+    const calculatedAlternatives = new Set<string>();
 
-    // 3. Stop notes that are no longer active
     activeScrubbingNotes.current.forEach(id => {
-      if (!activeIds.has(id)) {
-        audioController.handleNoteStop(id);
-        activeScrubbingNotes.current.delete(id);
-      }
+        if (!nextActiveIds.has(id)) {
+            audioController.handleNoteStop(id);
+            activeScrubbingNotes.current.delete(id);
+        }
     });
+
+    let assignIdx = 0;
+    sortedTimes.forEach(t => {
+        const groupItems = groups.get(t)!;
+        groupItems.forEach(item => {
+            const btnId = finalAssignment[assignIdx++];
+            
+            item.allCandidates.forEach(cand => {
+                if (cand !== btnId) calculatedAlternatives.add(cand);
+            });
+
+            if (!activeScrubbingNotes.current.has(btnId)) {
+                 const isBassRow = btnId.startsWith('bass');
+                 let type: 'bass' | 'chord' | 'treble' = 'treble';
+                 let chordType = undefined;
+
+                 if (isBassRow) {
+                    const [_, rStr, bStr] = btnId.split('-');
+                    const r = parseInt(rStr);
+                    const b = parseInt(bStr);
+                    const def = BASS_ROWS.find(row => row.rowId === r)?.buttons[b];
+                    if (def) {
+                        const noteDef = dir === Direction.PUSH ? def.push : def.pull;
+                        type = noteDef.type as any;
+                        chordType = noteDef.chordType;
+                    }
+                 }
+
+                 audioController.handleNoteStart(
+                   btnId,
+                   { midi: item.shiftedMidi, label: 'Scrub' },
+                   type,
+                   chordType,
+                   dir,
+                   {
+                     silent: !isScrubbingSoundEnabled,
+                     duration: 2.0
+                   }
+                 );
+                 activeScrubbingNotes.current.add(btnId);
+            }
+        });
+    });
+    
+    setAlternativeButtons(calculatedAlternatives);
   };
 
-  const seek = (time: number) => {
+const seek = (time: number) => {
     const newTime = Math.max(0, Math.min(time, totalTime));
     setCurrentTime(newTime);
+    
+    // Sync eventIndex to new time
+    const newIndex = eventQueue.current.findIndex(e => e.time >= newTime);
+    eventIndex.current = newIndex === -1 ? eventQueue.current.length : newIndex;
+    
+    // Clear playback state since we jumped
+    activeMidiMapping.current.clear();
     
     if (isPlaying) {
       const speedRatio = bpm / originalBpm;
@@ -799,6 +966,13 @@ export const useMidiPlayer = (
     editingNote,
     selectNote,
     clearSelection,
-    flashingNotes
+    flashingNotes,
+    deleteChannel,
+    autoScrollMode,
+    cycleAutoScrollMode,
+    isNoteSnapEnabled,
+    setIsNoteSnapEnabled,
+    isAutoSaveEnabled,
+    setIsAutoSaveEnabled
   };
 };

@@ -10,6 +10,8 @@ import { useLayoutEditor } from './hooks/useLayoutEditor';
 import { useAudioController } from './hooks/useAudioController';
 import { useBackgroundImage } from './hooks/useBackgroundImage';
 import { useMidiPlayer } from './hooks/useMidiPlayer';
+import { App as CapacitorApp } from '@capacitor/app';
+import { saveProject } from './helpers/projectStorage';
 
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +66,61 @@ export default function App() {
   } = useBackgroundImage();
 
   const midiPlayer = useMidiPlayer(audioController);
+
+  // --- Robust Auto-Save & Lifecycle ---
+  const playerRef = useRef(midiPlayer);
+  useEffect(() => { playerRef.current = midiPlayer; }, [midiPlayer]);
+
+  // 1. Debounced Auto-Save
+  useEffect(() => {
+    if (!midiPlayer.isAutoSaveEnabled || !midiPlayer.currentProjectId) return;
+    
+    const save = () => {
+       const state = midiPlayer.getProjectState();
+       if (state && midiPlayer.currentProjectId) {
+          saveProject({
+             id: midiPlayer.currentProjectId,
+             name: midiPlayer.fileName || 'Untitled Project',
+             lastModified: Date.now(),
+             ...state
+          });
+       }
+    };
+
+    const timer = setTimeout(save, 1000);
+    return () => clearTimeout(timer);
+  }, [
+    midiPlayer.currentProjectId,
+    midiPlayer.bpm,
+    midiPlayer.octaveShift,
+    midiPlayer.semitoneShift,
+    midiPlayer.channelModes,
+    midiPlayer.directionEvents,
+    midiPlayer.fingeringOverrides,
+    midiPlayer.isAutoSaveEnabled,
+    midiPlayer.fileName
+  ]);
+
+  // 2. Immediate Save on App Pause/Background
+  useEffect(() => {
+    const handlePause = () => {
+      const player = playerRef.current;
+      if (player.isAutoSaveEnabled && player.currentProjectId) {
+         const state = player.getProjectState();
+         if (state) {
+            saveProject({
+               id: player.currentProjectId,
+               name: player.fileName || 'Untitled Project',
+               lastModified: Date.now(),
+               ...state
+            });
+         }
+      }
+    };
+    
+    const listener = CapacitorApp.addListener('pause', handlePause);
+    return () => { listener.then(l => l.remove()); };
+  }, []);
 
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -127,13 +184,16 @@ export default function App() {
             isPlaying: midiPlayer.isPlaying,
             editingNote: midiPlayer.editingNote,
             onSelectNote: midiPlayer.selectNote,
-            onClearSelection: midiPlayer.clearSelection
+            onClearSelection: midiPlayer.clearSelection,
+            autoScrollMode: midiPlayer.autoScrollMode,
+            isNoteSnapEnabled: midiPlayer.isNoteSnapEnabled
           }}
         />
         <MidiControls
           player={midiPlayer}
           showTooltips={showTooltips}
           onToggleTooltips={() => setShowTooltips(!showTooltips)}
+          onOpenLibrary={() => setActiveOverlay('projects')}
         />
       </div>
 

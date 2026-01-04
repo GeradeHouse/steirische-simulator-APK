@@ -1,9 +1,19 @@
 import { GoogleGenAI } from "@google/genai";
 import { ChordAnalysis } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe initialization
+const apiKey = process.env.API_KEY;
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 export const analyzeChord = async (notes: string[], direction: string): Promise<ChordAnalysis> => {
+  if (!ai) {
+    return {
+      chordName: "No API Key",
+      description: "AI functionality disabled.",
+      notes: notes
+    };
+  }
+
   try {
     const prompt = `
       I am playing a Steirische Harmonika (Styrian Accordion).

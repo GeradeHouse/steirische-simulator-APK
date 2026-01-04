@@ -13,6 +13,7 @@ interface Props {
   isEditing?: boolean;
   idLabel?: string;
   isAlternative?: boolean;
+  isGleichton?: boolean;
   onAlternativeClick?: () => void;
   showTooltips?: boolean;
   onPlay: (note: NoteDefinition, direction: Direction) => void;
@@ -44,6 +45,7 @@ export const AccordionButton: React.FC<Props> = ({
   isEditing,
   idLabel,
   isAlternative,
+  isGleichton,
   onAlternativeClick,
   showTooltips = true,
   onPlay,
@@ -73,8 +75,14 @@ export const AccordionButton: React.FC<Props> = ({
 
   const markedClass = (!isEditing && isMarked) ? 'ring-2 ring-red-400/50 ring-offset-1 ring-offset-transparent' : '';
 
-  const textSize = isBass ? "text-[0.45rem] leading-tight" : "text-[0.5rem] leading-tight";
-  const textBase = `w-full h-full flex justify-center text-black font-medium ${textSize}`;
+  const getTextStyle = (isActiveDir: boolean) => {
+    const weight = isActiveDir ? "font-bold" : "font-normal";
+    const size = isBass
+      ? (isActiveDir ? "0.45rem" : "0.4rem")
+      : (isActiveDir ? "0.5rem" : "0.45rem");
+    return `text-[${size}] ${weight} leading-tight`;
+  };
+  const commonTextClasses = "w-full h-full flex justify-center text-black";
 
   // Active State Visuals
   const isPushActive = isActive && direction === Direction.PUSH;
@@ -229,23 +237,23 @@ export const AccordionButton: React.FC<Props> = ({
         onDragStart={(e) => { if (!isEditing) e.preventDefault(); }}
       >
         {/* Top Half (Push) */}
-        <div className={`flex-1 w-full bg-[#F8FAEB] relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-all duration-75 ${
+        <div className={`flex-1 w-full ${isGleichton ? 'bg-[#E2E5D5]' : 'bg-[#F8FAEB]'} relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-all duration-75 ${
             isPushActive
               ? activeRingClass
               : (isAlternative && direction === Direction.PUSH ? alternativeRingClass : '')
           }`}>
-          <div className={`${textBase} items-end pb-[1px]`}>
+          <div className={`${commonTextClasses} ${getTextStyle(direction === Direction.PUSH)} items-end pb-[1px]`}>
             {pushData.midi}
           </div>
         </div>
 
         {/* Bottom Half (Pull) */}
-        <div className={`flex-1 w-full bg-[#E5DDBA] relative rounded-b-full pointer-events-none transition-all duration-75 ${
+        <div className={`flex-1 w-full ${isGleichton ? 'bg-[#CCC4A3]' : 'bg-[#E5DDBA]'} relative rounded-b-full pointer-events-none transition-all duration-75 ${
             isPullActive
               ? activeRingClass
               : (isAlternative && direction === Direction.PULL ? alternativeRingClass : '')
           }`}>
-          <div className={`${textBase} items-start pt-[1px]`}>
+          <div className={`${commonTextClasses} ${getTextStyle(direction === Direction.PULL)} items-start pt-[1px]`}>
             {pullData.midi}
           </div>
         </div>
