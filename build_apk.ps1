@@ -11,6 +11,12 @@ if (!(Test-Path "$root\package.json") -or !(Test-Path "$root\android")) {
     Die "Please run this script from the project root (containing package.json and android/)."
 }
 
+# 1a. Cleanup Orphaned Processes
+if (Get-Process "esbuild" -ErrorAction SilentlyContinue) {
+    Write-Host "--- Cleaning Orphaned Build Processes ---" -ForegroundColor Cyan
+    Stop-Process -Name "esbuild" -ErrorAction SilentlyContinue -Force
+}
+
 # 2. Clean Android
 Write-Host "--- [1/5] Cleaning Android Build ---" -ForegroundColor Cyan
 Push-Location "$root\android"

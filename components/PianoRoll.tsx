@@ -5,6 +5,8 @@ import { Direction } from '../types';
 import { getButtonIdsForNote, getNoteKey } from '../helpers/midiMap';
 import { ExclamationTriangleIcon } from '@heroicons/react/24/solid';
 import { ArrowRightIcon, ArrowLeftIcon } from '@heroicons/react/24/outline';
+// Import the new helper
+import { getCompactChordName } from '../helpers/musicTheory';
 
 interface Props {
   notes: MidiNote[];
@@ -136,16 +138,17 @@ export const PianoRoll: React.FC<Props> = ({
   isNoteSnapEnabled
 }) => {
   // Configuration
-  const PX_PER_SEC = 150;
-  const NOTE_HEIGHT = 26; 
+  const [pxPerSec, setPxPerSec] = useState(150);
+  const [noteHeight, setNoteHeight] = useState(26);
+  
   const MIN_MIDI = 0;
   const MAX_MIDI = 127;
-  const TOTAL_HEIGHT = (MAX_MIDI - MIN_MIDI + 1) * NOTE_HEIGHT;
+  const TOTAL_HEIGHT = (MAX_MIDI - MIN_MIDI + 1) * noteHeight;
 
   // Colors
   const ROW_BLACK = '#F0EEE8';
   const ROW_WHITE = '#FBFBF9';
-  const KEY_BLACK = '#E5E7EB'; 
+  const KEY_BLACK = '#E5E7EB';
   const KEY_WHITE = '#FFFFFF';
 
   // State
@@ -154,6 +157,7 @@ export const PianoRoll: React.FC<Props> = ({
   
   // Refs
   const dragStartRef = useRef<{ x: number; time: number } | null>(null);
+  const prevPinchRef = useRef<{ distX: number; distY: number } | null>(null);
   const onSeekRef = useRef(onSeek);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -162,22 +166,26 @@ export const PianoRoll: React.FC<Props> = ({
     onSeekRef.current = onSeek;
   }, [onSeek]);
 
-  // Auto-Scroll to Highest Note on Load
+  // Wheel Zoom Listener
   useEffect(() => {
-    if (notes.length === 0 || !scrollContainerRef.current) return;
-    
-    let maxMidi = 0;
-    notes.forEach(n => {
-      if (n.midi > maxMidi) maxMidi = n.midi;
-    });
-    
-    // Calculate position of the highest note (using octaveShift * 12 + semitoneShift)
-    const shiftedMax = maxMidi + (octaveShift * 12) + semitoneShift;
-    const targetTop = (MAX_MIDI - shiftedMax) * NOTE_HEIGHT;
-    
-    // Scroll so the highest note is near the top (with 40px padding)
-    scrollContainerRef.current.scrollTop = Math.max(0, targetTop - 40);
-  }, [notes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT]);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        setPxPerSec(p => Math.max(50, Math.min(1000, p * delta)));
+      } else if (e.altKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        setNoteHeight(h => Math.max(10, Math.min(60, h * delta)));
+      }
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => container.removeEventListener('wheel', onWheel);
+  }, []);
 
   // --- Data Processing ---
 
@@ -187,6 +195,70 @@ export const PianoRoll: React.FC<Props> = ({
       return mode !== 'hidden';
     });
   }, [notes, channelModes]);
+
+  // --- NEW: Chord Detection Logic ---
+  const chordLabels = useMemo(() => {
+    const labels: { time: number; text: string; top: number; left: number }[] = [];
+    
+    // 1. Filter for Treble notes only
+    const trebleNotes = visibleNotes.filter(n => {
+      const mode = channelModes[n.channel] || 'muted';
+      return mode === 'treble'; // Only analyze treble channel
+    });
+
+    if (trebleNotes.length < 2) return [];
+
+    // 2. Group notes by time (tolerance of 50ms)
+    const groups: MidiNote[][] = [];
+    let currentGroup: MidiNote[] = [];
+    
+    // Sort by time first
+    const sorted = [...trebleNotes].sort((a, b) => a.time - b.time);
+
+    sorted.forEach((note) => {
+      if (currentGroup.length === 0) {
+        currentGroup.push(note);
+      } else {
+        const firstInGroup = currentGroup[0];
+        // If note starts within 50ms of the group start, add it
+        if (Math.abs(note.time - firstInGroup.time) < 0.05) {
+          currentGroup.push(note);
+        } else {
+          // Finalize previous group
+          groups.push(currentGroup);
+          currentGroup = [note];
+        }
+      }
+    });
+    if (currentGroup.length > 0) groups.push(currentGroup);
+
+    // 3. Analyze groups
+    groups.forEach(group => {
+      if (group.length < 2) return; // Ignore single notes
+
+      // Apply shifts to get the actual heard pitch
+      const shiftedMidis = group.map(n => n.midi + (octaveShift * 12) + semitoneShift);
+      
+      const name = getCompactChordName(shiftedMidis);
+      
+      if (name) {
+        // Find highest note for positioning (Highest Pitch = Lowest Y value in Piano Roll)
+        // Note: Piano roll Y is calculated as (MAX_MIDI - midi) * height.
+        // So the highest pitch has the largest MIDI value, resulting in the smallest 'top' value.
+        const maxMidi = Math.max(...group.map(n => n.midi + (octaveShift * 12) + semitoneShift));
+        const top = (MAX_MIDI - maxMidi) * noteHeight;
+        
+        labels.push({
+          time: group[0].time,
+          text: name,
+          top: top, // Position at the top of the highest note
+          left: group[0].time // We'll multiply by pxPerSec in render
+        });
+      }
+    });
+
+    return labels;
+  }, [visibleNotes, channelModes, octaveShift, semitoneShift, noteHeight, MAX_MIDI]);
 
   // Playback Auto-Scroll (Smooth Look-ahead)
   useEffect(() => {
@@ -217,7 +289,7 @@ export const PianoRoll: React.FC<Props> = ({
 
     // Calculate target scroll position
     // (MAX_MIDI - midi) * NOTE_HEIGHT is the top Y of the note row
-    const targetTop = (MAX_MIDI - maxMidiInWindow) * NOTE_HEIGHT - PADDING;
+    const targetTop = (MAX_MIDI - maxMidiInWindow) * noteHeight - PADDING;
     
     // Clamp target to valid scroll range
     const container = scrollContainerRef.current;
@@ -233,7 +305,7 @@ export const PianoRoll: React.FC<Props> = ({
     if (Math.abs(diff) > 1.0) {
        container.scrollTop = currentScroll + (diff * SMOOTHING);
     }
-  }, [currentTime, isPlaying, visibleNotes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT, autoScrollMode, channelModes]);
+  }, [currentTime, isPlaying, visibleNotes, octaveShift, semitoneShift, MAX_MIDI, noteHeight, autoScrollMode, channelModes]);
 
   const arrowGroups = useMemo(() => {
     // Structure: time -> { bassMin, trebleMin }
@@ -291,9 +363,47 @@ export const PianoRoll: React.FC<Props> = ({
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.stopPropagation();
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      prevPinchRef.current = {
+        distX: Math.abs(t1.clientX - t2.clientX),
+        distY: Math.abs(t1.clientY - t2.clientY)
+      };
+      return;
+    }
     e.stopPropagation();
     setIsDragging(true);
     dragStartRef.current = { x: e.touches[0].clientX, time: currentTime };
+  };
+
+  const handleTouchMovePinch = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && prevPinchRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const distX = Math.abs(t1.clientX - t2.clientX);
+      const distY = Math.abs(t1.clientY - t2.clientY);
+      
+      const prev = prevPinchRef.current;
+      
+      if (prev.distX > 0) {
+        const scaleX = distX / prev.distX;
+        setPxPerSec(p => Math.max(50, Math.min(1000, p * scaleX)));
+      }
+      if (prev.distY > 0) {
+        const scaleY = distY / prev.distY;
+        setNoteHeight(h => Math.max(10, Math.min(60, h * scaleY)));
+      }
+      
+      prevPinchRef.current = { distX, distY };
+    }
+  };
+
+  const handleTouchEndPinch = () => {
+    prevPinchRef.current = null;
   };
 
   const handleArrowClick = (e: React.MouseEvent, time: number, currentDir: Direction) => {
@@ -357,7 +467,7 @@ export const PianoRoll: React.FC<Props> = ({
       if (!isDragging || !dragStartRef.current) return;
       e.preventDefault();
       const dx = e.clientX - dragStartRef.current.x;
-      let newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+      let newTime = dragStartRef.current.time - (dx / pxPerSec);
 
       if (isNoteSnapEnabled) {
           const SNAP_WINDOW = 0.15;
@@ -384,7 +494,7 @@ export const PianoRoll: React.FC<Props> = ({
       if (!isDragging || !dragStartRef.current) return;
       e.preventDefault();
       const dx = e.touches[0].clientX - dragStartRef.current.x;
-      let newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+      let newTime = dragStartRef.current.time - (dx / pxPerSec);
 
       if (isNoteSnapEnabled) {
           const SNAP_WINDOW = 0.15;
@@ -424,7 +534,7 @@ export const PianoRoll: React.FC<Props> = ({
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleEnd);
     };
-  }, [isDragging, PX_PER_SEC, isNoteSnapEnabled, visibleNotes]);
+  }, [isDragging, pxPerSec, isNoteSnapEnabled, visibleNotes]);
 
   const rows = useMemo(() => {
     const r = [];
@@ -434,22 +544,47 @@ export const PianoRoll: React.FC<Props> = ({
     return r;
   }, [MAX_MIDI, MIN_MIDI]);
 
-  // Auto-Scroll to Highest Note on Load
+  // Auto-Scroll to Initial Notes (Vertical Centering)
   useEffect(() => {
     if (notes.length === 0 || !scrollContainerRef.current) return;
     
-    let maxMidi = 0;
-    notes.forEach(n => {
-      if (n.midi > maxMidi) maxMidi = n.midi;
+    // Filter visible notes
+    const visible = notes.filter(n => {
+       const mode = channelModes[n.channel] || 'muted';
+       return mode !== 'muted' && mode !== 'hidden';
     });
     
-    // Calculate position of the highest note (using octaveShift * 12 + semitoneShift)
-    const shiftedMax = maxMidi + (octaveShift * 12) + semitoneShift;
-    const targetTop = (MAX_MIDI - shiftedMax) * NOTE_HEIGHT;
+    if (visible.length === 0) return;
+
+    // Determine 'start' time of the song
+    const startTime = visible[0].time;
     
-    // Scroll so the highest note is near the top (with 40px padding)
-    scrollContainerRef.current.scrollTop = Math.max(0, targetTop - 40);
-  }, [notes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT]);
+    // Look at notes in the first 4 seconds window
+    const initialNotes = visible.filter(n => n.time < startTime + 4.0);
+    const targetNotes = initialNotes.length > 0 ? initialNotes : visible;
+
+    let maxMidi = -Infinity;
+    let minMidi = Infinity;
+    
+    targetNotes.forEach(n => {
+      const shifted = n.midi + (octaveShift * 12) + semitoneShift;
+      if (shifted > maxMidi) maxMidi = shifted;
+      if (shifted < minMidi) minMidi = shifted;
+    });
+
+    if (maxMidi === -Infinity) return;
+
+    // Calculate center pitch
+    const centerMidi = (maxMidi + minMidi) / 2;
+    
+    // Calculate scroll position to center this pitch
+    const containerHeight = scrollContainerRef.current.clientHeight;
+    // Y position of centerMidi in pixels (from top)
+    const centerPixel = (MAX_MIDI - centerMidi) * noteHeight;
+    const targetScroll = centerPixel - (containerHeight / 2);
+    
+    scrollContainerRef.current.scrollTop = Math.max(0, targetScroll);
+  }, [notes, octaveShift, semitoneShift, MAX_MIDI, noteHeight, channelModes]);
 
   // --- Data Processing ---
 
@@ -464,11 +599,11 @@ export const PianoRoll: React.FC<Props> = ({
         {/* 1. Left Sidebar (Keys) */}
         <div className="absolute left-0 top-0 bottom-0 w-12 z-20 border-r border-gray-300 shadow-md bg-gray-50">
            {rows.map(midi => (
-             <div 
+             <div
                key={`key-${midi}`}
                className="flex items-center justify-center text-[10px] font-bold text-gray-600 border-b border-gray-200"
-               style={{ 
-                 height: NOTE_HEIGHT, 
+               style={{
+                 height: noteHeight,
                  backgroundColor: isBlackKey(midi) ? KEY_BLACK : KEY_WHITE,
                  fontFamily: '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif'
                }}
@@ -484,17 +619,19 @@ export const PianoRoll: React.FC<Props> = ({
           className={`absolute top-0 bottom-0 left-12 right-0 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           onMouseDown={handleMouseDown}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMovePinch}
+          onTouchEnd={handleTouchEndPinch}
           onDoubleClick={() => setSelectedTimes(new Set())}
         >
            {/* Background Rows */}
            <div className="absolute inset-0 z-0 pointer-events-none">
              {rows.map(midi => (
-               <div 
+               <div
                  key={`row-${midi}`}
                  className="w-full border-b border-gray-100/50"
-                 style={{ 
-                   height: NOTE_HEIGHT, 
-                   backgroundColor: isBlackKey(midi) ? ROW_BLACK : ROW_WHITE 
+                 style={{
+                   height: noteHeight,
+                   backgroundColor: isBlackKey(midi) ? ROW_BLACK : ROW_WHITE
                  }}
                />
              ))}
@@ -504,15 +641,30 @@ export const PianoRoll: React.FC<Props> = ({
            <div className="absolute left-[20%] top-0 bottom-0 w-0.5 bg-red-400/60 z-30 pointer-events-none shadow-[0_0_4px_rgba(248,113,113,0.5)]"></div>
 
            {/* Notes Container */}
-           <div 
+           <div
              className="absolute top-0 bottom-0 left-[20%] will-change-transform z-10"
-             style={{ transform: `translateX(-${currentTime * PX_PER_SEC}px)` }}
+             style={{ transform: `translateX(-${currentTime * pxPerSec}px)` }}
            >
+              {/* --- NEW: Render Chord Labels --- */}
+              {chordLabels.map((label, idx) => (
+                <div
+                  key={`chord-${idx}-${label.time}`}
+                  className="absolute z-40 px-1.5 py-0.5 rounded bg-white/90 border border-gray-300 shadow-sm text-[10px] font-bold text-indigo-700 whitespace-nowrap pointer-events-none"
+                  style={{
+                    left: `${label.left * pxPerSec}px`,
+                    top: `${label.top - 20}px`,
+                    transform: 'translateX(-10%)'
+                  }}
+                >
+                  {label.text}
+                </div>
+              ))}
+
               {visibleNotes.map((note, idx) => {
-                const left = note.time * PX_PER_SEC;
-                const width = Math.max(note.duration * PX_PER_SEC, 10);
+                const left = note.time * pxPerSec;
+                const width = Math.max(note.duration * pxPerSec, 10);
                 const shiftedMidi = note.midi + (octaveShift * 12) + semitoneShift;
-                const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT;
+                const top = (MAX_MIDI - shiftedMidi) * noteHeight;
                 const label = getNoteLabel(shiftedMidi);
                 
                 const noteDir = getDirectionAtTime(note.time);
@@ -546,7 +698,7 @@ export const PianoRoll: React.FC<Props> = ({
                       left: `${left}px`,
                       top: `${top}px`,
                       width: `${width}px`,
-                      height: `${NOTE_HEIGHT}px`,
+                      height: `${noteHeight}px`,
                       zIndex: (isEditing || isFlashing) ? 50 : (mode === 'treble' || mode === 'bass' ? 20 : 10)
                     }}
                     onMouseDown={(e) => handleNoteMouseDown(e, note, noteDir)}
@@ -555,7 +707,7 @@ export const PianoRoll: React.FC<Props> = ({
                   >
                     <HandDrawnNote
                       width={width}
-                      height={NOTE_HEIGHT}
+                      height={noteHeight}
                       label={label}
                       hasMapping={hasMapping}
                       isHighlighted={!!isHighlighted}
@@ -579,8 +731,8 @@ export const PianoRoll: React.FC<Props> = ({
                   // Render Bass Arrow
                   if (group.bassMin !== null) {
                       const shiftedMidi = group.bassMin + (octaveShift * 12) + semitoneShift;
-                      const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT;
-                      const left = group.time * PX_PER_SEC;
+                      const top = (MAX_MIDI - shiftedMidi) * noteHeight + noteHeight;
+                      const left = group.time * pxPerSec;
                       items.push(
                           <div
                               key={`arrow-bass-${group.time}`}
@@ -597,8 +749,8 @@ export const PianoRoll: React.FC<Props> = ({
                   // Render Treble Arrow
                   if (group.trebleMin !== null) {
                       const shiftedMidi = group.trebleMin + (octaveShift * 12) + semitoneShift;
-                      const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT;
-                      const left = group.time * PX_PER_SEC;
+                      const top = (MAX_MIDI - shiftedMidi) * noteHeight + noteHeight;
+                      const left = group.time * pxPerSec;
                       items.push(
                           <div
                               key={`arrow-treble-${group.time}`}

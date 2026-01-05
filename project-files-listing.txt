@@ -1,11 +1,15 @@
 # Project Overview (included; respecting .gitignore)
-# Generated on: 2026-01-04 12:59:37
-# Total included files: 127
+# Generated on: 2026-01-05 01:49:45
+# Total included files: 130
 
 # Project structure:
+- .adb-wifi-connect-port.txt
+
 - android/ (76 files)
 
 - App.tsx
+
+- build_adb.ps1
 
 - build_apk.ps1
 
@@ -22,7 +26,7 @@
 
 - constants.ts
 
-- dist_apk/ (5 files)
+- dist_apk/ (6 files)
 
 - helpers/ (6 files)
   - appConfig.ts
@@ -73,6 +77,11 @@
 
 
 # Project Files Listing
+
+.adb-wifi-connect-port.txt:1-(2)
+```
+40119
+```
 
 android/app/build.gradle:1-(55)
 ```
@@ -1632,7 +1641,377 @@ export default function App() {
 }
 ```
 
-build_apk.ps1:1-(98)
+build_adb.ps1:1-(367)
+```
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$TargetIP = "192.168.31.35"
+
+# --- Pre-flight Check: Cleaning Orphaned Processes ---
+Write-Host "--- Pre-flight: Checking for orphaned build processes... ---" -ForegroundColor Cyan
+
+$orphans = Get-Process -Name "node", "esbuild" -ErrorAction SilentlyContinue
+if ($orphans) {
+    Write-Host "Found orphaned processes. Cleaning up..." -ForegroundColor Yellow
+    foreach ($p in $orphans) {
+        Write-Host "Stopping $($p.ProcessName) (PID: $($p.Id))..." -ForegroundColor DarkGray
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "Cleanup complete." -ForegroundColor Green
+}
+
+# mDNS/auto-connect tuning:
+# - Keep "adb-tls-connect" (paired devices) for safety.
+# - If you truly want maximum aggressiveness, you can add ",adb" to also allow _adb._tcp auto-connect:
+#   $MdnsAutoConnect = "adb-tls-connect,adb"
+$MdnsAutoConnect = "adb-tls-connect"
+$ForceOpenScreenMdns = $true
+
+# How long to wait/poll for mDNS discovery before prompting
+$MdnsPollSeconds = 6
+
+function Die([string]$msg) {
+    Write-Error "FAILED: $msg"
+    exit 1
+}
+
+function Require-Command([string]$name) {
+    if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
+        Die "Required command not found on PATH: $name"
+    }
+}
+
+function Exec([string]$file, [string[]]$Arguments = @(), [switch]$IgnoreExitCode) {
+    $out = & $file @Arguments 2>&1 | Out-String
+    $code = $LASTEXITCODE
+    if (-not $IgnoreExitCode -and $code -ne 0) {
+        $joined = ($Arguments | ForEach-Object { if ($_ -match '\s') { '"' + $_ + '"' } else { $_ } }) -join ' '
+        Die "$file $joined failed (exit $code). Output:`n$out"
+    }
+    return [pscustomobject]@{ Output = $out; ExitCode = $code }
+}
+
+function Exec-Live([string]$file, [string[]]$Arguments = @(), [switch]$IgnoreExitCode) {
+    Write-Host "Executing: $file $Arguments" -ForegroundColor DarkGray
+    & $file @Arguments
+    if (-not $IgnoreExitCode -and $LASTEXITCODE -ne 0) {
+        Die "$file failed with exit code $LASTEXITCODE"
+    }
+}
+
+function Get-AdbDevices() {
+    $res = Exec "adb" @("devices", "-l") -IgnoreExitCode
+    $lines = $res.Output -split "`r?`n" |
+        Where-Object { $_ -and $_ -notmatch '^\s*List of devices attached' }
+
+    $devices = @()
+    foreach ($line in $lines) {
+        if ($line -match '^(?<serial>\S+)\s+(?<state>\S+)\b(?<rest>.*)$') {
+            $devices += [pscustomobject]@{
+                Serial = $Matches.serial
+                State  = $Matches.state
+                Raw    = $line.Trim()
+            }
+        }
+    }
+    return $devices
+}
+
+function Get-AdbMdnsServices() {
+    $res = Exec "adb" @("mdns", "services") -IgnoreExitCode
+    $lines = $res.Output -split "`r?`n" |
+        Where-Object { $_ -and $_ -notmatch '^\s*List of discovered mdns services' }
+
+    $svcs = @()
+    foreach ($line in $lines) {
+        # Typical format:
+        # adb-xxxxxxx    _adb-tls-connect._tcp   192.168.1.2:6666
+        if ($line -match '^(?<name>\S+)\s+(?<type>_adb[^ ]+)\s+(?<ip>\d{1,3}(?:\.\d{1,3}){3}):(?<port>\d+)\s*$') {
+            $svcs += [pscustomobject]@{
+                Name = $Matches.name
+                Type = $Matches.type.TrimEnd('.')
+                IP   = $Matches.ip
+                Port = [int]$Matches.port
+                Raw  = $line.Trim()
+            }
+        }
+    }
+    return $svcs
+}
+
+function Find-TargetMdnsEndpoint([string]$ip) {
+    $svcs = Get-AdbMdnsServices
+    $match = $svcs | Where-Object { $_.IP -eq $ip -and $_.Type -match '_adb-tls-connect\._tcp$' } | Select-Object -First 1
+    if (-not $match) { return $null }
+    return [pscustomobject]@{
+        Name     = $match.Name
+        Endpoint = "$($match.IP):$($match.Port)"
+        Port     = $match.Port
+        Raw      = $match.Raw
+    }
+}
+
+function Test-TargetConnected([string]$ip, [string]$endpoint, [string]$mdnsName) {
+    $devices = Get-AdbDevices
+    foreach ($d in $devices) {
+        if ($d.State -ne "device") { continue }
+
+        # Common cases:
+        # - Serial is "ip:port"
+        # - Serial is an mDNS instance name
+        if ($endpoint -and $d.Serial -eq $endpoint) { return $true }
+        if ($mdnsName -and $d.Serial -eq $mdnsName) { return $true }
+        if ($d.Serial -like "$ip`:*") { return $true }
+    }
+    return $false
+}
+
+function Resolve-TargetSerial([string]$ip, [string]$endpoint, [string]$mdnsName) {
+    $devices = Get-AdbDevices | Where-Object { $_.State -eq "device" }
+
+    if ($endpoint) {
+        $hit = $devices | Where-Object { $_.Serial -eq $endpoint } | Select-Object -First 1
+        if ($hit) { return $hit.Serial }
+    }
+    if ($mdnsName) {
+        $hit = $devices | Where-Object { $_.Serial -eq $mdnsName } | Select-Object -First 1
+        if ($hit) { return $hit.Serial }
+    }
+    $hit = $devices | Where-Object { $_.Serial -like "$ip`:*" } | Select-Object -First 1
+    if ($hit) { return $hit.Serial }
+
+    if ($devices.Count -eq 1) {
+        Write-Warning "Target not uniquely identifiable; using the only connected device: $($devices[0].Serial)"
+        return $devices[0].Serial
+    }
+
+    if ($devices.Count -gt 1) {
+        Write-Warning "Multiple devices connected and target not uniquely identifiable."
+        $i = 0
+        foreach ($d in $devices) {
+            Write-Host ("[{0}] {1}" -f $i, $d.Raw) -ForegroundColor Gray
+            $i++
+        }
+        $choice = Read-Host "Enter the index of the device to use"
+        if ($choice -match '^\d+$' -and [int]$choice -ge 0 -and [int]$choice -lt $devices.Count) {
+            return $devices[[int]$choice].Serial
+        }
+        Die "Invalid selection."
+    }
+
+    return $null
+}
+
+function Configure-AdbAggressiveMdns() {
+    Write-Host "Configuring ADB mDNS settings..." -ForegroundColor Gray
+    
+    $env:ADB_MDNS_AUTO_CONNECT = $MdnsAutoConnect
+    if ($ForceOpenScreenMdns) {
+        $env:ADB_MDNS_OPENSCREEN = "1"
+    }
+
+    # Ensure server inherits env vars
+    Write-Host "Restarting ADB server to apply settings..." -ForegroundColor Gray
+    
+    Write-Host "  [1/3] Killing existing server..." -ForegroundColor DarkGray
+    Start-Process -FilePath "adb" -ArgumentList "kill-server" -NoNewWindow -Wait
+    
+    Write-Host "  [2/3] Starting server..." -ForegroundColor DarkGray
+    Start-Process -FilePath "adb" -ArgumentList "start-server" -NoNewWindow
+    Start-Sleep -Seconds 3
+
+    Write-Host "  [3/3] Checking mDNS status..." -ForegroundColor DarkGray
+    $check = Exec "adb" @("mdns", "check") -IgnoreExitCode
+    $msg = $check.Output.Trim()
+    if ($msg) {
+        Write-Host "ADB mDNS: $msg" -ForegroundColor DarkGray
+    }
+}
+
+function Try-Connect([string]$endpoint) {
+    if (-not $endpoint) { return $false }
+    Write-Host "Attempting adb connect $endpoint ..." -ForegroundColor Yellow
+    $res = Exec "adb" @("connect", $endpoint) -IgnoreExitCode
+    Write-Host ($res.Output.Trim()) -ForegroundColor Gray
+    return ($res.Output -match 'connected to' -or $res.Output -match 'already connected to')
+}
+
+function Ensure-TargetConnectedAndGetSerial([string]$ip, [string]$portCachePath) {
+    Configure-AdbAggressiveMdns
+
+    Write-Host "Checking for existing mDNS discovery..." -ForegroundColor Gray
+    
+    # 1) If already connected (by any name/serial), keep it.
+    $ep0 = Find-TargetMdnsEndpoint $ip
+    $endpoint0 = if ($ep0) { $ep0.Endpoint } else { $null }
+    $mdnsName0  = if ($ep0) { $ep0.Name } else { $null }
+
+    if (Test-TargetConnected $ip $endpoint0 $mdnsName0) {
+        $serial = Resolve-TargetSerial $ip $endpoint0 $mdnsName0
+        if ($serial) { return $serial }
+    }
+
+    Write-Host "Checking cached connection port..." -ForegroundColor Gray
+    
+    # 2) If we have a cached port, try it early (fast path).
+    $cachedPort = $null
+    if (Test-Path $portCachePath) {
+        $raw = (Get-Content $portCachePath -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($raw -match '^\s*(\d{2,5})\s*$') { $cachedPort = $Matches[1] }
+    }
+    if ($cachedPort) {
+        if (Try-Connect "$ip`:$cachedPort") {
+            return "$ip`:$cachedPort"
+        }
+    }
+
+    Write-Host "Polling for device availability (Timeout: ${MdnsPollSeconds}s)..." -ForegroundColor Gray
+    
+    # 3) Kick reconnects, then re-check/poll for mDNS + connect.
+    Exec "adb" @("reconnect", "offline") -IgnoreExitCode | Out-Null
+    Exec "adb" @("reconnect") -IgnoreExitCode | Out-Null
+
+    $deadline = (Get-Date).AddSeconds($MdnsPollSeconds)
+    do {
+        $ep = Find-TargetMdnsEndpoint $ip
+        if ($ep) {
+            # Even if auto-connect is enabled, explicitly connecting is harmless ("already connected").
+            if (Try-Connect $ep.Endpoint) {
+                if ($ep.Port) { Set-Content -Path $portCachePath -Value $ep.Port -Encoding ASCII }
+                return $ep.Endpoint
+            }
+
+            # Auto-connect might have connected using a non ip:port serial; try resolving.
+            if (Test-TargetConnected $ip $ep.Endpoint $ep.Name) {
+                $serial = Resolve-TargetSerial $ip $ep.Endpoint $ep.Name
+                if ($serial) {
+                    if ($ep.Port) { Set-Content -Path $portCachePath -Value $ep.Port -Encoding ASCII }
+                    return $serial
+                }
+            }
+        }
+        Start-Sleep -Milliseconds 500
+    } while ((Get-Date) -lt $deadline)
+
+    # 4) Manual flow: pair or connect-port prompt.
+    Write-Warning "Device $ip still not connected/discoverable via mDNS."
+    $input = Read-Host "Enter CONNECT Port (from Developer Options), or type 'pair' to pair a new device"
+
+    if ($input -eq "pair") {
+        $pairPort = Read-Host "Enter PAIRING Port"
+        Write-Host "Running adb pair..." -ForegroundColor Yellow
+        Write-Host "Please enter the Wi-Fi pairing code when prompted below." -ForegroundColor Gray
+        Exec "adb" @("pair", "$ip`:$pairPort") -IgnoreExitCode | Out-Null
+
+        # After pairing, prefer mDNS discovery (ports can be different from what user expects).
+        $deadline2 = (Get-Date).AddSeconds($MdnsPollSeconds)
+        do {
+            $ep2 = Find-TargetMdnsEndpoint $ip
+            if ($ep2 -and (Try-Connect $ep2.Endpoint)) {
+                if ($ep2.Port) { Set-Content -Path $portCachePath -Value $ep2.Port -Encoding ASCII }
+                return $ep2.Endpoint
+            }
+            Start-Sleep -Milliseconds 500
+        } while ((Get-Date) -lt $deadline2)
+
+        $connectPort = Read-Host "Pairing complete. Now enter the CONNECT Port"
+    } else {
+        $connectPort = $input
+    }
+
+    while ($true) {
+        if ([string]::IsNullOrWhiteSpace($connectPort)) {
+            $connectPort = Read-Host "Enter CONNECT Port"
+        }
+
+        if ($connectPort -notmatch '^\d{2,5}$') {
+            Write-Warning "Port must be numeric."
+            $connectPort = Read-Host "Enter CONNECT Port"
+            continue
+        }
+
+        $endpoint = "$ip`:$connectPort"
+        if (Try-Connect $endpoint) {
+            Set-Content -Path $portCachePath -Value $connectPort -Encoding ASCII
+            return $endpoint
+        }
+
+        Write-Warning "Connection failed."
+        $connectPort = Read-Host "Enter Correct Port to try again (or Ctrl+C to cancel)"
+    }
+}
+
+# ---- Preconditions ----
+Require-Command "adb"
+Require-Command "npm"
+Require-Command "npx"
+
+# 1. Detect Root
+$root = (Get-Location).Path
+if (!(Test-Path (Join-Path $root "package.json")) -or !(Test-Path (Join-Path $root "android"))) {
+    Die "Please run this script from the project root (containing package.json and android/)."
+}
+
+$portCachePath = Join-Path $root ".adb-wifi-connect-port.txt"
+
+# 2. ADB Connection Check (robust + aggressive auto-connect)
+Write-Host "--- [0/6] Checking ADB Connection ---" -ForegroundColor Cyan
+$TargetSerial = Ensure-TargetConnectedAndGetSerial $TargetIP $portCachePath
+if (-not $TargetSerial) { Die "Could not determine a usable adb serial for the target device." }
+Write-Host "Using ADB device: $TargetSerial" -ForegroundColor Green
+
+# 3. Clean Android
+Write-Host "--- [1/6] Cleaning Android Build ---" -ForegroundColor Cyan
+Push-Location (Join-Path $root "android")
+try {
+    Exec-Live ".\gradlew" @("clean")
+} finally { Pop-Location }
+
+# 4. Install Dependencies
+Write-Host "--- [2/6] Installing Dependencies ---" -ForegroundColor Cyan
+Exec-Live "npm" @("install")
+
+# 5. Build Web Assets
+Write-Host "--- [3/6] Building Web Assets ---" -ForegroundColor Cyan
+Exec-Live "npm" @("run", "build")
+
+# 6. Sync Capacitor
+Write-Host "--- [4/6] Syncing Capacitor ---" -ForegroundColor Cyan
+Exec-Live "npx" @("cap", "sync")
+
+# 7. Assemble Debug APK
+Write-Host "--- [5/6] Assembling APK ---" -ForegroundColor Cyan
+Push-Location (Join-Path $root "android")
+try {
+    Exec-Live ".\gradlew" @("assembleDebug")
+} finally { Pop-Location }
+
+# 8. Install & Run (always target the chosen serial to avoid "more than one device")
+Write-Host "--- [6/6] Installing & Launching ---" -ForegroundColor Cyan
+$apkPath = Join-Path $root "android\app\build\outputs\apk\debug\app-debug.apk"
+
+if (Test-Path $apkPath) {
+    Write-Host "Installing APK to device..." -ForegroundColor Yellow
+    Exec-Live "adb" @("-s", $TargetSerial, "install", "-r", $apkPath)
+
+    Write-Host "Launching App..." -ForegroundColor Yellow
+    Exec-Live "adb" @("-s", $TargetSerial, "shell", "am", "start", "-n", "com.steirische.simulator/.MainActivity")
+    Start-Sleep -Seconds 2
+
+    Write-Host "SUCCESS: Launching scrcpy..." -ForegroundColor Green
+    if (Get-Command "scrcpy" -ErrorAction SilentlyContinue) {
+        # Use AAC codec to improve compatibility with Android 16 / Sony devices
+        Exec-Live "scrcpy" @("-s", $TargetSerial, "--audio-codec=aac", "--audio-bit-rate=128K") -IgnoreExitCode
+    } else {
+        Write-Warning "scrcpy not found on PATH; skipping screen mirror."
+    }
+} else {
+    Die "APK file not found at $apkPath"
+}
+```
+
+build_apk.ps1:1-(104)
 ```
 $ErrorActionPreference = 'Stop'
 
@@ -1645,6 +2024,12 @@ function Die ($msg) {
 $root = Get-Location
 if (!(Test-Path "$root\package.json") -or !(Test-Path "$root\android")) {
     Die "Please run this script from the project root (containing package.json and android/)."
+}
+
+# 1a. Cleanup Orphaned Processes
+if (Get-Process "esbuild" -ErrorAction SilentlyContinue) {
+    Write-Host "--- Cleaning Orphaned Build Processes ---" -ForegroundColor Cyan
+    Stop-Process -Name "esbuild" -ErrorAction SilentlyContinue -Force
 }
 
 # 2. Clean Android
@@ -1749,7 +2134,7 @@ const config: CapacitorConfig = {
 export default config;
 ```
 
-components/AccordionButton.tsx:1-(289)
+components/AccordionButton.tsx:1-(291)
 ```
 // file: components/AccordionButton.tsx
 import React, { useRef, useState, useEffect } from 'react';
@@ -1766,6 +2151,7 @@ interface Props {
   isEditing?: boolean;
   idLabel?: string;
   isAlternative?: boolean;
+  isGleichton?: boolean;
   onAlternativeClick?: () => void;
   showTooltips?: boolean;
   onPlay: (note: NoteDefinition, direction: Direction) => void;
@@ -1797,6 +2183,7 @@ export const AccordionButton: React.FC<Props> = ({
   isEditing,
   idLabel,
   isAlternative,
+  isGleichton,
   onAlternativeClick,
   showTooltips = true,
   onPlay,
@@ -1833,7 +2220,7 @@ export const AccordionButton: React.FC<Props> = ({
       : (isActiveDir ? "0.5rem" : "0.45rem");
     return `text-[${size}] ${weight} leading-tight`;
   };
-  const commonTextClasses = "w-full h-full flex justify-center text-black";
+  const commonTextClasses = `w-full h-full flex justify-center ${isGleichton ? 'text-white' : 'text-black'}`;
 
   // Active State Visuals
   const isPushActive = isActive && direction === Direction.PUSH;
@@ -1988,7 +2375,7 @@ export const AccordionButton: React.FC<Props> = ({
         onDragStart={(e) => { if (!isEditing) e.preventDefault(); }}
       >
         {/* Top Half (Push) */}
-        <div className={`flex-1 w-full bg-[#F8FAEB] relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-all duration-75 ${
+        <div className={`flex-1 w-full ${isGleichton ? 'bg-[#9C6F44]' : 'bg-[#F8FAEB]'} relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-all duration-75 ${
             isPushActive
               ? activeRingClass
               : (isAlternative && direction === Direction.PUSH ? alternativeRingClass : '')
@@ -1999,7 +2386,7 @@ export const AccordionButton: React.FC<Props> = ({
         </div>
 
         {/* Bottom Half (Pull) */}
-        <div className={`flex-1 w-full bg-[#E5DDBA] relative rounded-b-full pointer-events-none transition-all duration-75 ${
+        <div className={`flex-1 w-full ${isGleichton ? 'bg-[#7E5635]' : 'bg-[#E5DDBA]'} relative rounded-b-full pointer-events-none transition-all duration-75 ${
             isPullActive
               ? activeRingClass
               : (isAlternative && direction === Direction.PULL ? alternativeRingClass : '')
@@ -2042,7 +2429,7 @@ export const AccordionButton: React.FC<Props> = ({
 };
 ```
 
-components/MainStage.tsx:1-(306)
+components/MainStage.tsx:1-(311)
 ```
 import React, { useMemo } from 'react';
 import { Capacitor } from '@capacitor/core';
@@ -2210,6 +2597,10 @@ export const MainStage: React.FC<MainStageProps> = ({
     const panel = isBassPanel ? 'left' : 'right';
     const style = transformStyle(id, pos.left, pos.top, size, panel);
 
+    // Gleichtone (Unison) Buttons
+    const GLEICHTONE_IDS = new Set(['treble-0-4', 'treble-1-5', 'treble-2-6', 'treble-3-6']);
+    const isGleichton = GLEICHTONE_IDS.has(id);
+
     const handleAlternativeClick = () => {
         if (!midiData?.onFingeringOverride) return;
         const currentMidiNote = midiData.notes.find(n => {
@@ -2247,6 +2638,7 @@ export const MainStage: React.FC<MainStageProps> = ({
         isEditing={isEditing}
         idLabel={isEditing ? id : undefined}
         isAlternative={isAlternative}
+        isGleichton={isGleichton}
         onAlternativeClick={handleAlternativeClick}
         showTooltips={showTooltips}
         style={style}
@@ -2583,7 +2975,7 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
 };
 ```
 
-components/PianoRoll.tsx:1-(622)
+components/PianoRoll.tsx:1-(693)
 ```
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { MidiNote, DirectionEvent } from '../hooks/useMidiPlayer';
@@ -2723,16 +3115,17 @@ export const PianoRoll: React.FC<Props> = ({
   isNoteSnapEnabled
 }) => {
   // Configuration
-  const PX_PER_SEC = 150;
-  const NOTE_HEIGHT = 26; 
+  const [pxPerSec, setPxPerSec] = useState(150);
+  const [noteHeight, setNoteHeight] = useState(26);
+  
   const MIN_MIDI = 0;
   const MAX_MIDI = 127;
-  const TOTAL_HEIGHT = (MAX_MIDI - MIN_MIDI + 1) * NOTE_HEIGHT;
+  const TOTAL_HEIGHT = (MAX_MIDI - MIN_MIDI + 1) * noteHeight;
 
   // Colors
   const ROW_BLACK = '#F0EEE8';
   const ROW_WHITE = '#FBFBF9';
-  const KEY_BLACK = '#E5E7EB'; 
+  const KEY_BLACK = '#E5E7EB';
   const KEY_WHITE = '#FFFFFF';
 
   // State
@@ -2741,6 +3134,7 @@ export const PianoRoll: React.FC<Props> = ({
   
   // Refs
   const dragStartRef = useRef<{ x: number; time: number } | null>(null);
+  const prevPinchRef = useRef<{ distX: number; distY: number } | null>(null);
   const onSeekRef = useRef(onSeek);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -2749,22 +3143,26 @@ export const PianoRoll: React.FC<Props> = ({
     onSeekRef.current = onSeek;
   }, [onSeek]);
 
-  // Auto-Scroll to Highest Note on Load
+  // Wheel Zoom Listener
   useEffect(() => {
-    if (notes.length === 0 || !scrollContainerRef.current) return;
-    
-    let maxMidi = 0;
-    notes.forEach(n => {
-      if (n.midi > maxMidi) maxMidi = n.midi;
-    });
-    
-    // Calculate position of the highest note (using octaveShift * 12 + semitoneShift)
-    const shiftedMax = maxMidi + (octaveShift * 12) + semitoneShift;
-    const targetTop = (MAX_MIDI - shiftedMax) * NOTE_HEIGHT;
-    
-    // Scroll so the highest note is near the top (with 40px padding)
-    scrollContainerRef.current.scrollTop = Math.max(0, targetTop - 40);
-  }, [notes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT]);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        setPxPerSec(p => Math.max(50, Math.min(1000, p * delta)));
+      } else if (e.altKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        setNoteHeight(h => Math.max(10, Math.min(60, h * delta)));
+      }
+    };
+
+    container.addEventListener('wheel', onWheel, { passive: false });
+    return () => container.removeEventListener('wheel', onWheel);
+  }, []);
 
   // --- Data Processing ---
 
@@ -2804,7 +3202,7 @@ export const PianoRoll: React.FC<Props> = ({
 
     // Calculate target scroll position
     // (MAX_MIDI - midi) * NOTE_HEIGHT is the top Y of the note row
-    const targetTop = (MAX_MIDI - maxMidiInWindow) * NOTE_HEIGHT - PADDING;
+    const targetTop = (MAX_MIDI - maxMidiInWindow) * noteHeight - PADDING;
     
     // Clamp target to valid scroll range
     const container = scrollContainerRef.current;
@@ -2820,7 +3218,7 @@ export const PianoRoll: React.FC<Props> = ({
     if (Math.abs(diff) > 1.0) {
        container.scrollTop = currentScroll + (diff * SMOOTHING);
     }
-  }, [currentTime, isPlaying, visibleNotes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT, autoScrollMode, channelModes]);
+  }, [currentTime, isPlaying, visibleNotes, octaveShift, semitoneShift, MAX_MIDI, noteHeight, autoScrollMode, channelModes]);
 
   const arrowGroups = useMemo(() => {
     // Structure: time -> { bassMin, trebleMin }
@@ -2878,9 +3276,47 @@ export const PianoRoll: React.FC<Props> = ({
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      e.stopPropagation();
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      prevPinchRef.current = {
+        distX: Math.abs(t1.clientX - t2.clientX),
+        distY: Math.abs(t1.clientY - t2.clientY)
+      };
+      return;
+    }
     e.stopPropagation();
     setIsDragging(true);
     dragStartRef.current = { x: e.touches[0].clientX, time: currentTime };
+  };
+
+  const handleTouchMovePinch = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && prevPinchRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const distX = Math.abs(t1.clientX - t2.clientX);
+      const distY = Math.abs(t1.clientY - t2.clientY);
+      
+      const prev = prevPinchRef.current;
+      
+      if (prev.distX > 0) {
+        const scaleX = distX / prev.distX;
+        setPxPerSec(p => Math.max(50, Math.min(1000, p * scaleX)));
+      }
+      if (prev.distY > 0) {
+        const scaleY = distY / prev.distY;
+        setNoteHeight(h => Math.max(10, Math.min(60, h * scaleY)));
+      }
+      
+      prevPinchRef.current = { distX, distY };
+    }
+  };
+
+  const handleTouchEndPinch = () => {
+    prevPinchRef.current = null;
   };
 
   const handleArrowClick = (e: React.MouseEvent, time: number, currentDir: Direction) => {
@@ -2944,7 +3380,7 @@ export const PianoRoll: React.FC<Props> = ({
       if (!isDragging || !dragStartRef.current) return;
       e.preventDefault();
       const dx = e.clientX - dragStartRef.current.x;
-      let newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+      let newTime = dragStartRef.current.time - (dx / pxPerSec);
 
       if (isNoteSnapEnabled) {
           const SNAP_WINDOW = 0.15;
@@ -2971,7 +3407,7 @@ export const PianoRoll: React.FC<Props> = ({
       if (!isDragging || !dragStartRef.current) return;
       e.preventDefault();
       const dx = e.touches[0].clientX - dragStartRef.current.x;
-      let newTime = dragStartRef.current.time - (dx / PX_PER_SEC);
+      let newTime = dragStartRef.current.time - (dx / pxPerSec);
 
       if (isNoteSnapEnabled) {
           const SNAP_WINDOW = 0.15;
@@ -3011,7 +3447,7 @@ export const PianoRoll: React.FC<Props> = ({
       window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('touchend', handleEnd);
     };
-  }, [isDragging, PX_PER_SEC, isNoteSnapEnabled, visibleNotes]);
+  }, [isDragging, pxPerSec, isNoteSnapEnabled, visibleNotes]);
 
   const rows = useMemo(() => {
     const r = [];
@@ -3021,22 +3457,47 @@ export const PianoRoll: React.FC<Props> = ({
     return r;
   }, [MAX_MIDI, MIN_MIDI]);
 
-  // Auto-Scroll to Highest Note on Load
+  // Auto-Scroll to Initial Notes (Vertical Centering)
   useEffect(() => {
     if (notes.length === 0 || !scrollContainerRef.current) return;
     
-    let maxMidi = 0;
-    notes.forEach(n => {
-      if (n.midi > maxMidi) maxMidi = n.midi;
+    // Filter visible notes
+    const visible = notes.filter(n => {
+       const mode = channelModes[n.channel] || 'muted';
+       return mode !== 'muted' && mode !== 'hidden';
     });
     
-    // Calculate position of the highest note (using octaveShift * 12 + semitoneShift)
-    const shiftedMax = maxMidi + (octaveShift * 12) + semitoneShift;
-    const targetTop = (MAX_MIDI - shiftedMax) * NOTE_HEIGHT;
+    if (visible.length === 0) return;
+
+    // Determine 'start' time of the song
+    const startTime = visible[0].time;
     
-    // Scroll so the highest note is near the top (with 40px padding)
-    scrollContainerRef.current.scrollTop = Math.max(0, targetTop - 40);
-  }, [notes, octaveShift, semitoneShift, MAX_MIDI, NOTE_HEIGHT]);
+    // Look at notes in the first 4 seconds window
+    const initialNotes = visible.filter(n => n.time < startTime + 4.0);
+    const targetNotes = initialNotes.length > 0 ? initialNotes : visible;
+
+    let maxMidi = -Infinity;
+    let minMidi = Infinity;
+    
+    targetNotes.forEach(n => {
+      const shifted = n.midi + (octaveShift * 12) + semitoneShift;
+      if (shifted > maxMidi) maxMidi = shifted;
+      if (shifted < minMidi) minMidi = shifted;
+    });
+
+    if (maxMidi === -Infinity) return;
+
+    // Calculate center pitch
+    const centerMidi = (maxMidi + minMidi) / 2;
+    
+    // Calculate scroll position to center this pitch
+    const containerHeight = scrollContainerRef.current.clientHeight;
+    // Y position of centerMidi in pixels (from top)
+    const centerPixel = (MAX_MIDI - centerMidi) * noteHeight;
+    const targetScroll = centerPixel - (containerHeight / 2);
+    
+    scrollContainerRef.current.scrollTop = Math.max(0, targetScroll);
+  }, [notes, octaveShift, semitoneShift, MAX_MIDI, noteHeight, channelModes]);
 
   // --- Data Processing ---
 
@@ -3051,11 +3512,11 @@ export const PianoRoll: React.FC<Props> = ({
         {/* 1. Left Sidebar (Keys) */}
         <div className="absolute left-0 top-0 bottom-0 w-12 z-20 border-r border-gray-300 shadow-md bg-gray-50">
            {rows.map(midi => (
-             <div 
+             <div
                key={`key-${midi}`}
                className="flex items-center justify-center text-[10px] font-bold text-gray-600 border-b border-gray-200"
-               style={{ 
-                 height: NOTE_HEIGHT, 
+               style={{
+                 height: noteHeight,
                  backgroundColor: isBlackKey(midi) ? KEY_BLACK : KEY_WHITE,
                  fontFamily: '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif'
                }}
@@ -3071,17 +3532,19 @@ export const PianoRoll: React.FC<Props> = ({
           className={`absolute top-0 bottom-0 left-12 right-0 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           onMouseDown={handleMouseDown}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMovePinch}
+          onTouchEnd={handleTouchEndPinch}
           onDoubleClick={() => setSelectedTimes(new Set())}
         >
            {/* Background Rows */}
            <div className="absolute inset-0 z-0 pointer-events-none">
              {rows.map(midi => (
-               <div 
+               <div
                  key={`row-${midi}`}
                  className="w-full border-b border-gray-100/50"
-                 style={{ 
-                   height: NOTE_HEIGHT, 
-                   backgroundColor: isBlackKey(midi) ? ROW_BLACK : ROW_WHITE 
+                 style={{
+                   height: noteHeight,
+                   backgroundColor: isBlackKey(midi) ? ROW_BLACK : ROW_WHITE
                  }}
                />
              ))}
@@ -3091,15 +3554,15 @@ export const PianoRoll: React.FC<Props> = ({
            <div className="absolute left-[20%] top-0 bottom-0 w-0.5 bg-red-400/60 z-30 pointer-events-none shadow-[0_0_4px_rgba(248,113,113,0.5)]"></div>
 
            {/* Notes Container */}
-           <div 
+           <div
              className="absolute top-0 bottom-0 left-[20%] will-change-transform z-10"
-             style={{ transform: `translateX(-${currentTime * PX_PER_SEC}px)` }}
+             style={{ transform: `translateX(-${currentTime * pxPerSec}px)` }}
            >
               {visibleNotes.map((note, idx) => {
-                const left = note.time * PX_PER_SEC;
-                const width = Math.max(note.duration * PX_PER_SEC, 10);
+                const left = note.time * pxPerSec;
+                const width = Math.max(note.duration * pxPerSec, 10);
                 const shiftedMidi = note.midi + (octaveShift * 12) + semitoneShift;
-                const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT;
+                const top = (MAX_MIDI - shiftedMidi) * noteHeight;
                 const label = getNoteLabel(shiftedMidi);
                 
                 const noteDir = getDirectionAtTime(note.time);
@@ -3133,8 +3596,8 @@ export const PianoRoll: React.FC<Props> = ({
                       left: `${left}px`,
                       top: `${top}px`,
                       width: `${width}px`,
-                      height: `${NOTE_HEIGHT}px`,
-                      zIndex: isEditing || isFlashing ? 50 : 10
+                      height: `${noteHeight}px`,
+                      zIndex: (isEditing || isFlashing) ? 50 : (mode === 'treble' || mode === 'bass' ? 20 : 10)
                     }}
                     onMouseDown={(e) => handleNoteMouseDown(e, note, noteDir)}
                     onMouseUp={(e) => handleNoteMouseUp(e, shiftedMidi, noteDir)}
@@ -3142,7 +3605,7 @@ export const PianoRoll: React.FC<Props> = ({
                   >
                     <HandDrawnNote
                       width={width}
-                      height={NOTE_HEIGHT}
+                      height={noteHeight}
                       label={label}
                       hasMapping={hasMapping}
                       isHighlighted={!!isHighlighted}
@@ -3166,8 +3629,8 @@ export const PianoRoll: React.FC<Props> = ({
                   // Render Bass Arrow
                   if (group.bassMin !== null) {
                       const shiftedMidi = group.bassMin + (octaveShift * 12) + semitoneShift;
-                      const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT;
-                      const left = group.time * PX_PER_SEC;
+                      const top = (MAX_MIDI - shiftedMidi) * noteHeight + noteHeight;
+                      const left = group.time * pxPerSec;
                       items.push(
                           <div
                               key={`arrow-bass-${group.time}`}
@@ -3184,8 +3647,8 @@ export const PianoRoll: React.FC<Props> = ({
                   // Render Treble Arrow
                   if (group.trebleMin !== null) {
                       const shiftedMidi = group.trebleMin + (octaveShift * 12) + semitoneShift;
-                      const top = (MAX_MIDI - shiftedMidi) * NOTE_HEIGHT + NOTE_HEIGHT;
-                      const left = group.time * PX_PER_SEC;
+                      const top = (MAX_MIDI - shiftedMidi) * noteHeight + noteHeight;
+                      const left = group.time * pxPerSec;
                       items.push(
                           <div
                               key={`arrow-treble-${group.time}`}
@@ -3912,6 +4375,11 @@ dist_apk/Steirische-v1.1-20260103-000653.apk:1-(1)
 ```
 
 dist_apk/Steirische-v1.1-20260104-125535.apk:1-(1)
+```
+# [binary file omitted]
+```
+
+dist_apk/Steirische-v1.1-20260104-134820.apk:1-(1)
 ```
 # [binary file omitted]
 ```
@@ -4957,7 +5425,7 @@ export const useLayoutEditor = (containerRef: RefObject<HTMLDivElement>) => {
 };
 ```
 
-hooks/useMidiPlayer.ts:1-(979)
+hooks/useMidiPlayer.ts:1-(1016)
 ```
 import { useState, useEffect, useRef } from 'react';
 import { Midi } from '@tonejs/midi';
@@ -5332,14 +5800,51 @@ export const useMidiPlayer = (
     
     eventQueue.current = events;
     resetPlayer();
+
+    // Auto-jump to start of music (horizontal scroll fix)
+    if (parsedNotes.length > 0) {
+      const firstNoteTime = parsedNotes[0].time;
+      const startBuffer = 1.0;
+      const newTime = Math.max(0, firstNoteTime - startBuffer);
+      setCurrentTime(newTime);
+      pausedTimeRef.current = newTime;
+    }
   };
 
   const resetPlayer = () => {
     setIsPlaying(false);
-    setCurrentTime(0);
-    eventIndex.current = 0;
-    pausedTimeRef.current = 0;
-    directionRef.current = Direction.PUSH;
+    
+    // Calculate start time based on visible notes (skip initial silence)
+    let startTime = 0;
+    const visibleNotes = allNotes.filter(n => {
+        const mode = channelModes[n.channel] || 'muted';
+        return mode !== 'muted' && mode !== 'hidden';
+    });
+    
+    if (visibleNotes.length > 0) {
+        // Start 1 second before the first audible note
+        startTime = Math.max(0, visibleNotes[0].time - 1.0);
+    }
+
+    setCurrentTime(startTime);
+    pausedTimeRef.current = startTime;
+    
+    // Sync Event Index to new start time
+    const newIndex = eventQueue.current.findIndex(e => e.time >= startTime);
+    eventIndex.current = newIndex === -1 ? eventQueue.current.length : newIndex;
+    
+    // Sync Direction to new start time
+    let dir = Direction.PUSH;
+    for (const event of directionEvents) {
+      if (event.time <= startTime + 0.001) {
+        dir = event.direction;
+      } else {
+        break;
+      }
+    }
+    directionRef.current = dir;
+    audioController.setDirection(dir);
+
     activeMidiMapping.current.clear();
     activeScrubbingNotes.current.clear();
     audioController.stopAllNotes();
@@ -6909,7 +7414,7 @@ interface ImportMeta {
 }
 ```
 
-steirische-simulator-APK.code-workspace:1-(10)
+steirische-simulator-APK.code-workspace:1-(11)
 ```
 {
 	"folders": [
@@ -6918,7 +7423,8 @@ steirische-simulator-APK.code-workspace:1-(10)
 		}
 	],
 	"settings": {
-		"java.configuration.updateBuildConfiguration": "automatic"
+		"java.configuration.updateBuildConfiguration": "automatic",
+		"java.import.gradle.enabled": false
 	}
 }
 ```

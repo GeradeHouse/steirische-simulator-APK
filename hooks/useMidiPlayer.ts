@@ -371,14 +371,51 @@ export const useMidiPlayer = (
     
     eventQueue.current = events;
     resetPlayer();
+
+    // Auto-jump to start of music (horizontal scroll fix)
+    if (parsedNotes.length > 0) {
+      const firstNoteTime = parsedNotes[0].time;
+      const startBuffer = 1.0;
+      const newTime = Math.max(0, firstNoteTime - startBuffer);
+      setCurrentTime(newTime);
+      pausedTimeRef.current = newTime;
+    }
   };
 
   const resetPlayer = () => {
     setIsPlaying(false);
-    setCurrentTime(0);
-    eventIndex.current = 0;
-    pausedTimeRef.current = 0;
-    directionRef.current = Direction.PUSH;
+    
+    // Calculate start time based on visible notes (skip initial silence)
+    let startTime = 0;
+    const visibleNotes = allNotes.filter(n => {
+        const mode = channelModes[n.channel] || 'muted';
+        return mode !== 'muted' && mode !== 'hidden';
+    });
+    
+    if (visibleNotes.length > 0) {
+        // Start 1 second before the first audible note
+        startTime = Math.max(0, visibleNotes[0].time - 1.0);
+    }
+
+    setCurrentTime(startTime);
+    pausedTimeRef.current = startTime;
+    
+    // Sync Event Index to new start time
+    const newIndex = eventQueue.current.findIndex(e => e.time >= startTime);
+    eventIndex.current = newIndex === -1 ? eventQueue.current.length : newIndex;
+    
+    // Sync Direction to new start time
+    let dir = Direction.PUSH;
+    for (const event of directionEvents) {
+      if (event.time <= startTime + 0.001) {
+        dir = event.direction;
+      } else {
+        break;
+      }
+    }
+    directionRef.current = dir;
+    audioController.setDirection(dir);
+
     activeMidiMapping.current.clear();
     activeScrubbingNotes.current.clear();
     audioController.stopAllNotes();
