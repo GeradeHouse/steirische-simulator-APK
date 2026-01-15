@@ -2,16 +2,16 @@
 import { SoundSettings } from '../../types';
 
 export interface ActiveVoice {
-  sourceNodes: AudioScheduledSourceNode[]; 
-  gain: GainNode; 
+  sourceNodes: AudioScheduledSourceNode[];
+  gain: GainNode;
   nodesToDisconnect: AudioNode[];
   // References for real-time updates
   panner: StereoPannerNode;
-  peakFilter: BiquadFilterNode;
+  peakFilter?: BiquadFilterNode;
   lpFilter: BiquadFilterNode;
-  noiseGain: GainNode;
-  oscillators: OscillatorNode[]; 
-  baseFreq: number; 
+  noiseGain?: GainNode;
+  oscillators: OscillatorNode[];
+  baseFreq: number;
   type: 'bass' | 'chord' | 'treble';
   startTime: number;
 }

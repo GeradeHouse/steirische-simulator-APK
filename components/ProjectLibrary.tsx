@@ -5,9 +5,10 @@ import { TrashIcon, ArrowDownTrayIcon, FolderOpenIcon, PlusIcon, ArrowPathIcon, 
 
 interface Props {
   player: any; // ReturnType<typeof useMidiPlayer>
+  onClose?: () => void;
 }
 
-export const ProjectLibrary: React.FC<Props> = ({ player }) => {
+export const ProjectLibrary: React.FC<Props> = ({ player, onClose }) => {
   const [projects, setProjects] = useState<{ id: string; name: string; lastModified: number }[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveName, setSaveName] = useState('');
@@ -74,7 +75,7 @@ export const ProjectLibrary: React.FC<Props> = ({ player }) => {
         MIDI Projects
       </h3>
 
-      {/* Import MIDI File */}
+      {/* Hidden File Input */}
       <input
         type="file"
         accept=".mid,.midi"
@@ -87,73 +88,72 @@ export const ProjectLibrary: React.FC<Props> = ({ player }) => {
           }
         }}
       />
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        className="mb-4 w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-700 text-xs font-bold py-2 rounded hover:bg-gray-200 border border-gray-200"
-      >
-        <ArrowUpOnSquareIcon className="w-4 h-4" />
-        Import MIDI File
-      </button>
 
-      {/* Save Controls */}
-      {player.fileName && (
-        <div className="mb-4 p-3 bg-indigo-50 rounded border border-indigo-100">
-          <div className="flex justify-between items-start mb-2">
-            <div className="text-xs font-bold text-indigo-800 truncate max-w-[150px]">
-              Current: {player.fileName}
-            </div>
-            {player.currentProjectId && (
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={player.isAutoSaveEnabled}
-                  onChange={(e) => player.setIsAutoSaveEnabled(e.target.checked)}
-                  className="w-3 h-3 accent-indigo-600 rounded"
-                />
-                <span className="text-[10px] font-bold text-indigo-600">Auto Save</span>
-              </label>
-            )}
+      {/* Project Controls */}
+      <div className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
+        <div className="flex justify-between items-center mb-3">
+          <div className="text-xs font-bold text-gray-700 truncate max-w-[150px]">
+            {player.fileName ? `Current: ${player.fileName}` : 'No Project Loaded'}
           </div>
-          
-          {isSaving ? (
-            <div className="flex flex-col gap-2">
-              <input 
-                type="text" 
-                placeholder="Project Name" 
-                className="text-xs p-1 border rounded"
-                value={saveName}
-                onChange={e => setSaveName(e.target.value)}
-                autoFocus
+          {player.currentProjectId && (
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={player.isAutoSaveEnabled}
+                onChange={(e) => player.setIsAutoSaveEnabled(e.target.checked)}
+                className="w-3 h-3 accent-indigo-600 rounded"
               />
-              <div className="flex gap-2">
-                <button onClick={() => handleSave(true)} className="flex-1 bg-indigo-600 text-white text-xs py-1 rounded hover:bg-indigo-700">
-                  Save New
-                </button>
-                <button onClick={() => setIsSaving(false)} className="px-2 bg-gray-200 text-gray-600 text-xs rounded hover:bg-gray-300">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex gap-2">
-              {player.currentProjectId && (
-                <button 
-                  onClick={() => handleSave(false)}
-                  className="flex-1 flex items-center justify-center gap-1 bg-indigo-100 text-indigo-700 text-xs py-1.5 rounded hover:bg-indigo-200 border border-indigo-200"
-                >
-                  <ArrowPathIcon className="w-3 h-3" /> Update
-                </button>
-              )}
-              <button 
-                onClick={() => { setSaveName(player.fileName || ''); setIsSaving(true); }}
-                className="flex-1 flex items-center justify-center gap-1 bg-white text-gray-700 text-xs py-1.5 rounded hover:bg-gray-50 border border-gray-300"
-              >
-                <PlusIcon className="w-3 h-3" /> Save As...
-              </button>
-            </div>
+              <span className="text-[10px] font-bold text-indigo-600">Auto Save</span>
+            </label>
           )}
         </div>
-      )}
+        
+        {isSaving ? (
+          <div className="flex flex-col gap-2">
+            <input
+              type="text"
+              placeholder="Project Name"
+              className="text-xs p-1 border rounded"
+              value={saveName}
+              onChange={e => setSaveName(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button onClick={() => handleSave(true)} className="flex-1 bg-indigo-600 text-white text-xs py-1 rounded hover:bg-indigo-700">
+                Confirm Save
+              </button>
+              <button onClick={() => setIsSaving(false)} className="px-2 bg-gray-200 text-gray-600 text-xs rounded hover:bg-gray-300">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center justify-center gap-1 bg-white text-gray-700 text-xs py-2 rounded hover:bg-gray-50 border border-gray-300"
+            >
+              <FolderOpenIcon className="w-4 h-4" /> Open
+            </button>
+            
+            <button
+              onClick={() => handleSave(false)}
+              disabled={!player.currentProjectId}
+              className="flex items-center justify-center gap-1 bg-indigo-100 text-indigo-700 text-xs py-2 rounded hover:bg-indigo-200 border border-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <ArrowDownTrayIcon className="w-4 h-4" /> Save
+            </button>
+
+            <button
+              onClick={() => { setSaveName(player.fileName || ''); setIsSaving(true); }}
+              disabled={!player.fileName}
+              className="flex items-center justify-center gap-1 bg-white text-gray-700 text-xs py-2 rounded hover:bg-gray-50 border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <PlusIcon className="w-4 h-4" /> Save As
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Project List */}
       <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
@@ -163,9 +163,10 @@ export const ProjectLibrary: React.FC<Props> = ({ player }) => {
           </div>
         ) : (
           projects.map(p => (
-            <div 
+            <div
               key={p.id}
               onClick={() => handleLoad(p.id)}
+              onDoubleClick={() => { handleLoad(p.id); onClose?.(); }}
               className={`group p-2 rounded border cursor-pointer transition-all hover:shadow-sm ${
                 player.currentProjectId === p.id 
                   ? 'bg-blue-50 border-blue-300 ring-1 ring-blue-200' 

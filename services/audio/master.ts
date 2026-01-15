@@ -84,9 +84,17 @@ export const updateMasterChain = (ctx: AudioContext, chain: MasterChain, setting
   chain.eqMidNode.gain.setTargetAtTime(settings.eqMid, now, 0.1);
   chain.eqHighNode.gain.setTargetAtTime(settings.eqHigh, now, 0.1);
   
-  chain.dryGain.gain.setTargetAtTime(1 - settings.reverbMix, now, 0.1);
-  chain.wetGain.gain.setTargetAtTime(settings.reverbMix, now, 0.1);
+  // Performance: Reverb
+  if (settings.enableReverb) {
+      chain.dryGain.gain.setTargetAtTime(1 - settings.reverbMix, now, 0.1);
+      chain.wetGain.gain.setTargetAtTime(settings.reverbMix, now, 0.1);
+  } else {
+      chain.dryGain.gain.setTargetAtTime(1, now, 0.1);
+      chain.wetGain.gain.setTargetAtTime(0, now, 0.1);
+  }
 
+  // Performance: Distortion Oversampling
+  chain.tubeDistortion.oversample = settings.enableTubeDistortion ? '4x' : 'none';
   // Cast to any to resolve TS mismatch
   chain.tubeDistortion.curve = makeDistortionCurve(settings.tubeSaturation) as any;
 };

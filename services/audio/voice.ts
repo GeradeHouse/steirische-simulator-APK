@@ -94,11 +94,16 @@ export const createVoice = (
   hpFilter.type = 'highpass';
   hpFilter.frequency.value = isBass ? 40 : 100;
 
-  const peakFilter = ctx.createBiquadFilter();
-  peakFilter.type = 'peaking';
-  peakFilter.frequency.value = isBass ? 200 : settings.boxResonanceFreq;
-  peakFilter.Q.value = 1.5;
-  peakFilter.gain.value = isBass ? settings.bassChamberResonance : settings.boxResonanceAmount;
+  let peakFilter: BiquadFilterNode | undefined;
+  
+  // Performance: Box Resonance
+  if (settings.enableBoxResonance) {
+      peakFilter = ctx.createBiquadFilter();
+      peakFilter.type = 'peaking';
+      peakFilter.frequency.value = isBass ? 200 : settings.boxResonanceFreq;
+      peakFilter.Q.value = 1.5;
+      peakFilter.gain.value = isBass ? settings.bassChamberResonance : settings.boxResonanceAmount;
+  }
 
   const lpFilter = ctx.createBiquadFilter();
   lpFilter.type = 'lowpass';
@@ -108,25 +113,32 @@ export const createVoice = (
   lpFilter.frequency.value = cutoff;
 
   // Push/Pull Variance (Subtle EQ shift)
-  if (settings.pushPullVariance > 0) {
+  if (settings.pushPullVariance > 0 && peakFilter) {
       if (direction === Direction.PULL) {
           peakFilter.frequency.value *= 1.1; // Pulling tightens the box slightly
       }
   }
 
-  hpFilter.connect(peakFilter);
-  peakFilter.connect(lpFilter);
+  // Connect Chain
+  if (peakFilter) {
+      hpFilter.connect(peakFilter);
+      peakFilter.connect(lpFilter);
+  } else {
+      hpFilter.connect(lpFilter);
+  }
+  
   lpFilter.connect(panner);
   panner.connect(envelopeGain);
   envelopeGain.connect(masterChain.preGain);
 
   const sourceNodes: AudioScheduledSourceNode[] = [];
   const oscNodes: OscillatorNode[] = [];
-  const nodesToDisconnect: AudioNode[] = [hpFilter, peakFilter, lpFilter, panner, envelopeGain];
+  const nodesToDisconnect: AudioNode[] = [hpFilter, lpFilter, panner, envelopeGain];
+  if (peakFilter) nodesToDisconnect.push(peakFilter);
 
-  // 2. Air Noise
-  const noiseGain = ctx.createGain();
-  if (resources.noiseBuffer && settings.airNoiseLevel > 0) {
+  // 2. Air Noise (Performance Check)
+  let noiseGain: GainNode | undefined;
+  if (settings.enableAirNoise && resources.noiseBuffer && settings.airNoiseLevel > 0) {
     const noiseNode = ctx.createBufferSource();
     noiseNode.buffer = resources.noiseBuffer;
     noiseNode.loop = true;
@@ -166,8 +178,11 @@ export const createVoice = (
     // Reduced gains to prevent clipping (0.6 -> 0.35)
     createOscillator(ctx, hpFilter, freq, 0.35, resources.bassWave!, sourceNodes, oscNodes, now, settings, true, -2);
     createOscillator(ctx, hpFilter, freq, 0.35, resources.bassWave!, sourceNodes, oscNodes, now, settings, true, 2);
-    // Octave (0.2 -> 0.15)
-    createOscillator(ctx, hpFilter, freq * 2, 0.15 * settings.bassOctaveBalance, resources.bassWave!, sourceNodes, oscNodes, now, settings);
+    
+    // Octave (Conditional)
+    if (settings.bassOctaveBalance > 0) {
+        createOscillator(ctx, hpFilter, freq * 2, 0.15 * settings.bassOctaveBalance, resources.bassWave!, sourceNodes, oscNodes, now, settings);
+    }
 
   } else if (type === 'chord') {
     envelopeGain.gain.linearRampToValueAtTime(0.8, now + attack);
@@ -188,11 +203,16 @@ export const createVoice = (
     // Treble
     envelopeGain.gain.linearRampToValueAtTime(1.0, now + attack);
 
-    // Reduced gains (0.3/0.25 -> 0.2/0.15)
+    // Main Reed
     createOscillator(ctx, hpFilter, freq, 0.2, resources.trebleWave!, sourceNodes, oscNodes, now, settings, true);
-    createOscillator(ctx, hpFilter, freq, 0.15, resources.trebleWave!, sourceNodes, oscNodes, now, settings, false, settings.musetteDetune);
-    createOscillator(ctx, hpFilter, freq, 0.15, resources.trebleWave!, sourceNodes, oscNodes, now, settings, false, -settings.musetteDetune);
     
+    // Musette Reeds (Conditional)
+    if (settings.musetteDetune > 0) {
+        createOscillator(ctx, hpFilter, freq, 0.15, resources.trebleWave!, sourceNodes, oscNodes, now, settings, false, settings.musetteDetune);
+        createOscillator(ctx, hpFilter, freq, 0.15, resources.trebleWave!, sourceNodes, oscNodes, now, settings, false, -settings.musetteDetune);
+    }
+    
+    // Octave Reed (Conditional)
     if (settings.trebleOctaveBalance > 0) {
         createOscillator(ctx, hpFilter, freq * 2, 0.1 * settings.trebleOctaveBalance, resources.trebleWave!, sourceNodes, oscNodes, now, settings);
     }
@@ -216,11 +236,13 @@ export const createVoice = (
 export const updateVoice = (voice: ActiveVoice, settings: SoundSettings, now: number) => {
   // Box Resonance
   const isBass = voice.type === 'bass';
-  const resFreq = isBass ? 200 : settings.boxResonanceFreq;
-  const resGain = isBass ? settings.bassChamberResonance : settings.boxResonanceAmount;
   
-  voice.peakFilter.frequency.setTargetAtTime(resFreq, now, 0.1);
-  voice.peakFilter.gain.setTargetAtTime(resGain, now, 0.1);
+  if (voice.peakFilter) {
+      const resFreq = isBass ? 200 : settings.boxResonanceFreq;
+      const resGain = isBass ? settings.bassChamberResonance : settings.boxResonanceAmount;
+      voice.peakFilter.frequency.setTargetAtTime(resFreq, now, 0.1);
+      voice.peakFilter.gain.setTargetAtTime(resGain, now, 0.1);
+  }
 
   // Grille / Brightness
   let cutoff = settings.grilleFilterCutoff;
@@ -231,8 +253,10 @@ export const updateVoice = (voice: ActiveVoice, settings: SoundSettings, now: nu
   voice.lpFilter.frequency.setTargetAtTime(cutoff, now, 0.1);
 
   // Air Noise
-  const baseNoise = isBass ? 1.5 : 1.0;
-  voice.noiseGain.gain.setTargetAtTime(settings.airNoiseLevel * baseNoise, now, 0.1);
+  if (voice.noiseGain) {
+      const baseNoise = isBass ? 1.5 : 1.0;
+      voice.noiseGain.gain.setTargetAtTime(settings.airNoiseLevel * baseNoise, now, 0.1);
+  }
 
   // Musette Detune (Treble/Chord only)
   if (!isBass) {
@@ -259,4 +283,25 @@ export const stopVoice = (voice: ActiveVoice, ctx: AudioContext, settings: Sound
     voice.gain.disconnect();
     voice.nodesToDisconnect.forEach(node => node.disconnect());
   }, (settings.reedReleaseTime * 1000) + 200);
+};
+
+export const killVoice = (voice: ActiveVoice) => {
+  try {
+    // Cancel any scheduled ramps (like the release tail)
+    voice.gain.gain.cancelScheduledValues(0);
+    voice.gain.gain.value = 0;
+    
+    // Stop oscillators immediately
+    voice.sourceNodes.forEach(node => {
+      try { node.stop(); } catch (e) {}
+    });
+
+    // Disconnect everything
+    voice.gain.disconnect();
+    voice.nodesToDisconnect.forEach(node => {
+      try { node.disconnect(); } catch (e) {}
+    });
+  } catch (e) {
+    // Ignore errors if already disconnected
+  }
 };

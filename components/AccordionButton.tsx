@@ -34,7 +34,7 @@ const parseLabel = (fullLabel: string) => {
   return { midi: fullLabel, german: fullLabel };
 };
 
-export const AccordionButton: React.FC<Props> = ({
+const AccordionButtonBase: React.FC<Props> = ({
   pushNote,
   pullNote,
   direction,
@@ -87,9 +87,40 @@ export const AccordionButton: React.FC<Props> = ({
   // Active State Visuals
   const isPushActive = isActive && direction === Direction.PUSH;
   const isPullActive = isActive && direction === Direction.PULL;
-  // Changed from yellow to bright blue with a background tint for better visibility
-  const activeRingClass = "ring-2 ring-inset ring-blue-600 z-20 shadow-[inset_0_0_15px_rgba(37,99,235,0.5)] bg-blue-400/20";
-  const alternativeRingClass = "ring-2 ring-inset ring-blue-300 bg-blue-300/40 z-30";
+  
+  // Dynamic Active Ring Color based on Note Type & Direction
+  const getActiveRingClass = (type: string, dir: Direction) => {
+    const base = "ring-2 ring-inset z-20 ";
+    const isPush = dir === Direction.PUSH;
+
+    if (type === 'bass') {
+      return base + (isPush
+        ? "ring-purple-600 shadow-[inset_0_0_15px_rgba(147,51,234,0.5)] bg-purple-400/20"
+        : "ring-purple-800 shadow-[inset_0_0_15px_rgba(107,33,168,0.5)] bg-purple-600/20");
+    } else if (type === 'chord') {
+      return base + (isPush
+        ? "ring-orange-600 shadow-[inset_0_0_15px_rgba(234,88,12,0.5)] bg-orange-400/20"
+        : "ring-red-600 shadow-[inset_0_0_15px_rgba(220,38,38,0.5)] bg-red-400/20");
+    }
+    // Treble
+    return base + (isPush
+      ? "ring-green-600 shadow-[inset_0_0_15px_rgba(22,163,74,0.5)] bg-green-400/20"
+      : "ring-emerald-700 shadow-[inset_0_0_15px_rgba(4,120,87,0.5)] bg-emerald-600/20");
+  };
+
+  // Duller/Less Saturated Ring for Alternatives
+  const getAlternativeRingClass = (type: string, dir: Direction) => {
+    const base = "ring-2 ring-inset z-30 ";
+    const isPush = dir === Direction.PUSH;
+
+    if (type === 'bass') {
+      return base + (isPush ? "ring-purple-300 bg-purple-100/30" : "ring-purple-400 bg-purple-200/30");
+    } else if (type === 'chord') {
+      return base + (isPush ? "ring-orange-300 bg-orange-100/30" : "ring-red-300 bg-red-100/30");
+    }
+    // Treble
+    return base + (isPush ? "ring-green-300 bg-green-100/30" : "ring-emerald-300 bg-emerald-100/30");
+  };
 
   // --- 1. Tooltip Delay Logic ---
   // Only show tooltip if the note has been active for >100ms.
@@ -239,8 +270,8 @@ export const AccordionButton: React.FC<Props> = ({
         {/* Top Half (Push) */}
         <div className={`flex-1 w-full ${isGleichton ? 'bg-[#9C6F44]' : 'bg-[#F8FAEB]'} relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-all duration-75 ${
             isPushActive
-              ? activeRingClass
-              : (isAlternative && direction === Direction.PUSH ? alternativeRingClass : '')
+              ? getActiveRingClass(pushNote.type, Direction.PUSH)
+              : (isAlternative && direction === Direction.PUSH ? getAlternativeRingClass(pushNote.type, Direction.PUSH) : '')
           }`}>
           <div className={`${commonTextClasses} ${getTextStyle(direction === Direction.PUSH)} items-end pb-[1px]`}>
             {pushData.midi}
@@ -250,8 +281,8 @@ export const AccordionButton: React.FC<Props> = ({
         {/* Bottom Half (Pull) */}
         <div className={`flex-1 w-full ${isGleichton ? 'bg-[#7E5635]' : 'bg-[#E5DDBA]'} relative rounded-b-full pointer-events-none transition-all duration-75 ${
             isPullActive
-              ? activeRingClass
-              : (isAlternative && direction === Direction.PULL ? alternativeRingClass : '')
+              ? getActiveRingClass(pullNote.type, Direction.PULL)
+              : (isAlternative && direction === Direction.PULL ? getAlternativeRingClass(pullNote.type, Direction.PULL) : '')
           }`}>
           <div className={`${commonTextClasses} ${getTextStyle(direction === Direction.PULL)} items-start pt-[1px]`}>
             {pullData.midi}
@@ -289,3 +320,29 @@ export const AccordionButton: React.FC<Props> = ({
     </>
   );
 };
+
+const arePropsEqual = (prev: Props, next: Props) => {
+  // 1. Primitives & Stable References
+  if (prev.isActive !== next.isActive) return false;
+  if (prev.direction !== next.direction) return false;
+  if (prev.isEditing !== next.isEditing) return false;
+  if (prev.isSelected !== next.isSelected) return false;
+  if (prev.isAlternative !== next.isAlternative) return false;
+  if (prev.isMarked !== next.isMarked) return false;
+  if (prev.showTooltips !== next.showTooltips) return false;
+  
+  // 2. Note Definitions (Reference equality from constants is usually sufficient)
+  if (prev.pushNote !== next.pushNote) return false;
+  if (prev.pullNote !== next.pullNote) return false;
+
+  // 3. Style Object (Deep compare specific keys used for layout)
+  if (prev.style?.left !== next.style?.left) return false;
+  if (prev.style?.top !== next.style?.top) return false;
+  if (prev.style?.width !== next.style?.width) return false;
+
+  // Ignore functions (onPlay, onStop, etc.) as they are recreated every render
+  // but don't affect visual output unless the data above changes.
+  return true;
+};
+
+export const AccordionButton = React.memo(AccordionButtonBase, arePropsEqual);

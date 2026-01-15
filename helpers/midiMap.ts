@@ -51,3 +51,16 @@ const buildMaps = () => {
 export const getNoteKey = (midi: number, time: number, channel: number) => {
   return `${midi}-${time.toFixed(3)}-${channel}`;
 };
+
+// --- Coordinate Cache for Solver Optimization ---
+const coordCache = new Map<string, { r: number, c: number }>();
+
+export const getButtonCoords = (id: string): { r: number, c: number } => {
+  if (coordCache.has(id)) return coordCache.get(id)!;
+  
+  const parts = id.split('-');
+  // id format: type-row-col (e.g., "bass-0-1")
+  const coords = { r: parseInt(parts[1]), c: parseInt(parts[2]) };
+  coordCache.set(id, coords);
+  return coords;
+};

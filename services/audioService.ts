@@ -4,12 +4,13 @@ import { ActiveVoice, AudioResources, MasterChain } from './audio/internalTypes'
 import { setupMasterChain, updateMasterChain } from './audio/master';
 import { generateTrebleWave, generateBassWave, generateNoiseBuffer } from './audio/generators';
 import { playMechanicalSound } from './audio/mechanics';
-import { createVoice, updateVoice, stopVoice } from './audio/voice';
+import { createVoice, updateVoice, stopVoice, killVoice } from './audio/voice';
 
 class AudioService {
   private context: AudioContext | null = null;
   private masterChain: MasterChain | null = null;
   private activeVoices: Map<string, ActiveVoice> = new Map();
+  private releasingVoices: Map<string, ActiveVoice> = new Map(); // Track fading voices
   private resources: AudioResources = {
     trebleWave: null,
     bassWave: null,
@@ -70,8 +71,21 @@ class AudioService {
 
   playNote(noteId: string, midi: number, type: 'bass' | 'chord' | 'treble', chordType: 'major' | 'minor' | '7th' | 'none' = 'major', direction: Direction = Direction.PUSH, options?: { duration?: number }) {
     if (!this.context) this.init();
-    if (this.activeVoices.has(noteId)) return;
     if (!this.masterChain) return;
+
+    // 1. Voice Stealing (Active): If button is held, kill it to re-trigger (staccato/repeat)
+    if (this.activeVoices.has(noteId)) {
+        const oldVoice = this.activeVoices.get(noteId)!;
+        killVoice(oldVoice);
+        this.activeVoices.delete(noteId);
+    }
+
+    // 2. Voice Stealing (Releasing): If button is fading out, kill it for sharp attack
+    if (this.releasingVoices.has(noteId)) {
+        const oldVoice = this.releasingVoices.get(noteId)!;
+        killVoice(oldVoice);
+        this.releasingVoices.delete(noteId);
+    }
 
     const ctx = this.context!;
     const now = ctx.currentTime;
@@ -111,15 +125,28 @@ class AudioService {
       // Mechanical Release Thud
       playMechanicalSound(this.context, this.masterChain, this.settings, now, 'thud', voice.type === 'bass' || voice.type === 'chord');
 
-      // Stop Voice
+      // Stop Voice (starts fade out)
       stopVoice(voice, this.context, this.settings);
       
       this.activeVoices.delete(noteId);
+
+      // Track as releasing
+      this.releasingVoices.set(noteId, voice);
+      
+      // Cleanup after fade out completes
+      setTimeout(() => {
+          if (this.releasingVoices.get(noteId) === voice) {
+              this.releasingVoices.delete(noteId);
+          }
+      }, (this.settings.reedReleaseTime * 1000) + 250);
     }
   }
 
   stopAll() {
     this.activeVoices.forEach((_, key) => this.stopNote(key));
+    // Also kill any releasing voices to be sure
+    this.releasingVoices.forEach(v => killVoice(v));
+    this.releasingVoices.clear();
   }
 }
 

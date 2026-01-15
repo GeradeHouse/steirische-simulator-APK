@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   PlayIcon, PauseIcon, StopIcon, FolderOpenIcon,
   PlusIcon, MinusIcon, SpeakerWaveIcon, SpeakerXMarkIcon,
@@ -14,7 +14,28 @@ interface Props {
 
 export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTooltips, onOpenLibrary }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [viewportBottom, setViewportBottom] = useState(4);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const updatePosition = () => {
+      // Calculate the difference between the layout height and visual height
+      // This difference represents the keyboard height (plus any other overlays)
+      const offset = Math.max(0, window.innerHeight - vv.height);
+      setViewportBottom(offset + 4); // +4px padding
+    };
+
+    vv.addEventListener('resize', updatePosition);
+    vv.addEventListener('scroll', updatePosition);
+    updatePosition();
+
+    return () => {
+      vv.removeEventListener('resize', updatePosition);
+      vv.removeEventListener('scroll', updatePosition);
+    };
+  }, []);
 
   const pressTimer = React.useRef<any>(null);
   const isLongPress = React.useRef(false);
@@ -47,8 +68,17 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
+  const handleBpmAdjust = (e: React.MouseEvent, delta: number) => {
+    // If double click/tap (detail > 1), adjust by 10, otherwise 1
+    const amount = e.detail > 1 ? delta * 10 : delta;
+    player.setBpm(Math.max(1, Math.min(300, player.bpm + amount)));
+  };
+
   return (
-    <div className={`absolute left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-gray-300 p-2 rounded-2xl shadow-xl flex items-center gap-3 z-50 transition-all duration-300 max-w-[98vw] overflow-x-auto scrollbar-hide ${isInputFocused ? 'bottom-1/2' : 'bottom-1'}`}>
+    <div
+      className="absolute left-1/2 -translate-x-1/2 bg-white/95 backdrop-blur border border-gray-300 p-2 rounded-2xl shadow-xl flex items-center gap-3 z-50 transition-all duration-300 max-w-[98vw] overflow-x-auto scrollbar-hide"
+      style={{ bottom: `${viewportBottom}px` }}
+    >
       
       {/* --- Transport (Always Visible) --- */}
       <div className="flex items-center gap-2 flex-none">
@@ -96,6 +126,7 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
                   let bgClass = 'bg-gray-200 text-gray-500';
                   if (mode === 'bass') bgClass = 'bg-purple-600 text-white';
                   else if (mode === 'treble') bgClass = 'bg-green-600 text-white';
+                  else if (mode === 'chord') bgClass = 'bg-orange-500 text-white';
                   else if (mode === 'hidden') bgClass = 'bg-gray-800 text-gray-400 line-through';
 
                   return (
@@ -128,17 +159,30 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
 
           <div className="flex items-center gap-1">
             <span className="text-[10px] font-bold text-gray-500">BPM</span>
-            <input
-              type="number"
-              value={player.bpm}
-              onChange={(e) => player.setBpm(Number(e.target.value))}
-              onFocus={() => setIsInputFocused(true)}
-              onBlur={() => setIsInputFocused(false)}
-              onTouchStart={() => setIsInputFocused(true)}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              enterKeyHint="done"
-              className="w-10 px-1 py-0.5 border rounded text-xs text-center"
-            />
+            <div className="flex items-center border rounded bg-gray-50">
+              <button
+                onClick={(e) => handleBpmAdjust(e, -1)}
+                className="px-1.5 py-0.5 hover:bg-gray-200 text-gray-600 border-r border-gray-200"
+              >
+                <MinusIcon className="w-3 h-3" />
+              </button>
+              <input
+                type="number"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={player.bpm}
+                onChange={(e) => player.setBpm(Number(e.target.value))}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                enterKeyHint="done"
+                className="w-8 py-0.5 text-xs text-center bg-transparent outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <button
+                onClick={(e) => handleBpmAdjust(e, 1)}
+                className="px-1.5 py-0.5 hover:bg-gray-200 text-gray-600 border-l border-gray-200"
+              >
+                <PlusIcon className="w-3 h-3" />
+              </button>
+            </div>
           </div>
 
           {/* Octave Shift */}
@@ -180,13 +224,14 @@ export const MidiControls: React.FC<Props> = ({ player, showTooltips, onToggleTo
             className={`p-1.5 rounded-full transition-colors flex items-center gap-1 ${
               player.autoScrollMode === 'treble' ? 'bg-green-100 text-green-700' :
               player.autoScrollMode === 'bass' ? 'bg-purple-100 text-purple-700' :
+              player.autoScrollMode === 'chord' ? 'bg-orange-100 text-orange-700' :
               'text-gray-400 hover:bg-gray-100'
             }`}
             title={`Auto Scroll: ${player.autoScrollMode ? player.autoScrollMode.charAt(0).toUpperCase() + player.autoScrollMode.slice(1) : 'Off'}`}
           >
             <ArrowsUpDownIcon className="w-4 h-4" />
             <span className="text-[9px] font-bold uppercase w-3 text-center">
-                {player.autoScrollMode === 'treble' ? 'T' : player.autoScrollMode === 'bass' ? 'B' : ''}
+                {player.autoScrollMode === 'treble' ? 'T' : player.autoScrollMode === 'bass' ? 'B' : player.autoScrollMode === 'chord' ? 'C' : ''}
             </span>
           </button>
 

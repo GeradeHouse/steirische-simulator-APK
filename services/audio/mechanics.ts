@@ -3,13 +3,15 @@ import { SoundSettings } from '../../types';
 import { MasterChain } from './internalTypes';
 
 export const playMechanicalSound = (
-  ctx: AudioContext, 
-  masterChain: MasterChain, 
-  settings: SoundSettings, 
-  time: number, 
-  type: 'click' | 'thud', 
+  ctx: AudioContext,
+  masterChain: MasterChain,
+  settings: SoundSettings,
+  time: number,
+  type: 'click' | 'thud',
   isBass: boolean
 ) => {
+  if (!settings.enableMechanicalNoise) return;
+
   // 1. Get Base Volume
   let vol = type === 'click' ? settings.buttonClickVolume : settings.palletThudVolume;
   

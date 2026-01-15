@@ -20,7 +20,7 @@ export const useSoundSettings = () => {
     audioService.updateSettings(settings);
   }, [settings]);
 
-  const updateSetting = (key: keyof SoundSettings, value: number) => {
+  const updateSetting = (key: keyof SoundSettings, value: number | boolean) => {
     const newSettings = { ...settings, [key]: value };
     setSettings(newSettings);
     audioService.updateSettings(newSettings);

@@ -290,7 +290,7 @@ export default function App() {
               />
             ) : (
               <div className="h-full p-4 overflow-y-auto">
-                <ProjectLibrary player={midiPlayer} />
+                <ProjectLibrary player={midiPlayer} onClose={() => setActiveOverlay(null)} />
               </div>
             )}
           </div>

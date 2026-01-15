@@ -1,3 +1,14 @@
+[CmdletBinding()]
+param(
+    [switch]$Scrcpy,
+    [ValidateSet('desktop','phone','both')]
+    [string]$Audio = 'desktop',
+
+    # 0.5 = open at half-size (usually fixes the "starts at ~200%" feel)
+    [ValidateRange(0.1, 2.0)]
+    [double]$ScrcpyScale = 0.5
+)
+
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
@@ -6,7 +17,7 @@ $TargetIP = "192.168.31.35"
 # --- Pre-flight Check: Cleaning Orphaned Processes ---
 Write-Host "--- Pre-flight: Checking for orphaned build processes... ---" -ForegroundColor Cyan
 
-$orphans = Get-Process -Name "node", "esbuild" -ErrorAction SilentlyContinue
+$orphans = Get-Process -Name "node", "esbuild", "scrcpy" -ErrorAction SilentlyContinue
 if ($orphans) {
     Write-Host "Found orphaned processes. Cleaning up..." -ForegroundColor Yellow
     foreach ($p in $orphans) {
@@ -160,7 +171,7 @@ function Resolve-TargetSerial([string]$ip, [string]$endpoint, [string]$mdnsName)
 
 function Configure-AdbAggressiveMdns() {
     Write-Host "Configuring ADB mDNS settings..." -ForegroundColor Gray
-    
+
     $env:ADB_MDNS_AUTO_CONNECT = $MdnsAutoConnect
     if ($ForceOpenScreenMdns) {
         $env:ADB_MDNS_OPENSCREEN = "1"
@@ -168,10 +179,10 @@ function Configure-AdbAggressiveMdns() {
 
     # Ensure server inherits env vars
     Write-Host "Restarting ADB server to apply settings..." -ForegroundColor Gray
-    
+
     Write-Host "  [1/3] Killing existing server..." -ForegroundColor DarkGray
     Start-Process -FilePath "adb" -ArgumentList "kill-server" -NoNewWindow -Wait
-    
+
     Write-Host "  [2/3] Starting server..." -ForegroundColor DarkGray
     Start-Process -FilePath "adb" -ArgumentList "start-server" -NoNewWindow
     Start-Sleep -Seconds 3
@@ -196,7 +207,7 @@ function Ensure-TargetConnectedAndGetSerial([string]$ip, [string]$portCachePath)
     Configure-AdbAggressiveMdns
 
     Write-Host "Checking for existing mDNS discovery..." -ForegroundColor Gray
-    
+
     # 1) If already connected (by any name/serial), keep it.
     $ep0 = Find-TargetMdnsEndpoint $ip
     $endpoint0 = if ($ep0) { $ep0.Endpoint } else { $null }
@@ -208,7 +219,7 @@ function Ensure-TargetConnectedAndGetSerial([string]$ip, [string]$portCachePath)
     }
 
     Write-Host "Checking cached connection port..." -ForegroundColor Gray
-    
+
     # 2) If we have a cached port, try it early (fast path).
     $cachedPort = $null
     if (Test-Path $portCachePath) {
@@ -222,7 +233,7 @@ function Ensure-TargetConnectedAndGetSerial([string]$ip, [string]$portCachePath)
     }
 
     Write-Host "Polling for device availability (Timeout: ${MdnsPollSeconds}s)..." -ForegroundColor Gray
-    
+
     # 3) Kick reconnects, then re-check/poll for mDNS + connect.
     Exec "adb" @("reconnect", "offline") -IgnoreExitCode | Out-Null
     Exec "adb" @("reconnect") -IgnoreExitCode | Out-Null
@@ -299,13 +310,20 @@ function Ensure-TargetConnectedAndGetSerial([string]$ip, [string]$portCachePath)
 
 # ---- Preconditions ----
 Require-Command "adb"
-Require-Command "npm"
-Require-Command "npx"
 
-# 1. Detect Root
+if ($Scrcpy) {
+    Require-Command "scrcpy"
+} else {
+    Require-Command "npm"
+    Require-Command "npx"
+}
+
+# 1. Detect Root (only required for build flow)
 $root = (Get-Location).Path
-if (!(Test-Path (Join-Path $root "package.json")) -or !(Test-Path (Join-Path $root "android"))) {
-    Die "Please run this script from the project root (containing package.json and android/)."
+if (-not $Scrcpy) {
+    if (!(Test-Path (Join-Path $root "package.json")) -or !(Test-Path (Join-Path $root "android"))) {
+        Die "Please run this script from the project root (containing package.json and android/)."
+    }
 }
 
 $portCachePath = Join-Path $root ".adb-wifi-connect-port.txt"
@@ -315,6 +333,58 @@ Write-Host "--- [0/6] Checking ADB Connection ---" -ForegroundColor Cyan
 $TargetSerial = Ensure-TargetConnectedAndGetSerial $TargetIP $portCachePath
 if (-not $TargetSerial) { Die "Could not determine a usable adb serial for the target device." }
 Write-Host "Using ADB device: $TargetSerial" -ForegroundColor Green
+
+function Get-DeviceVideoSize([string]$serial) {
+    # Physical size (typically in natural orientation)
+    $wm = Exec "adb" @("-s", $serial, "shell", "wm", "size") -IgnoreExitCode
+    if ($wm.Output -notmatch 'Physical size:\s*(\d+)x(\d+)') { return $null }
+    $w = [int]$Matches[1]
+    $h = [int]$Matches[2]
+
+    # Force Landscape for Steirische Simulator (App is always landscape)
+    # This ensures the window opens with the correct aspect ratio (Width > Height)
+    # preventing black bars and ensuring the title bar fits on screen.
+    $width = [Math]::Max($w, $h)
+    $height = [Math]::Min($w, $h)
+
+    return [pscustomobject]@{ Width = $width; Height = $height }
+}
+
+function Get-ScrcpyArgs([string]$serial, [string]$audioMode, [double]$scale) {
+    $opts = @("-s", $serial, "--port=20000:20020")
+
+    # Force initial window size (prevents the "huge first window" effect)
+    $sz = Get-DeviceVideoSize $serial
+    if ($sz -and $scale -ne 1.0) {
+        $winW = [int][Math]::Round($sz.Width  * $scale)
+        $winH = [int][Math]::Round($sz.Height * $scale)
+        $opts += @("--window-width=$winW", "--window-height=$winH")
+    }
+
+    switch ($audioMode) {
+        'desktop' {
+            # Forward app playback; device is muted by default in this mode
+            $opts += @("--audio-source=playback", "--require-audio")
+        }
+        'phone' {
+            # No forwarding; phone plays normally
+            $opts += @("--no-audio")
+        }
+        'both' {
+            # Capture device output (requires Android 12+); plays on both device and PC
+            $opts += @("--audio-source=output", "--require-audio")
+        }
+    }
+    return $opts
+}
+
+# Scrcpy-only mode: skip build/install/launch and immediately mirror
+if ($Scrcpy) {
+    Write-Host "--- [1/1] Launching scrcpy ---" -ForegroundColor Cyan
+    $scrcpyArgs = Get-ScrcpyArgs $TargetSerial $Audio $ScrcpyScale
+    Exec-Live "scrcpy" $scrcpyArgs -IgnoreExitCode
+    exit 0
+}
 
 # 3. Clean Android
 Write-Host "--- [1/6] Cleaning Android Build ---" -ForegroundColor Cyan
@@ -356,8 +426,8 @@ if (Test-Path $apkPath) {
 
     Write-Host "SUCCESS: Launching scrcpy..." -ForegroundColor Green
     if (Get-Command "scrcpy" -ErrorAction SilentlyContinue) {
-        # Use AAC codec to improve compatibility with Android 16 / Sony devices
-        Exec-Live "scrcpy" @("-s", $TargetSerial, "--audio-codec=aac", "--audio-bit-rate=128K") -IgnoreExitCode
+        $scrcpyArgs = Get-ScrcpyArgs $TargetSerial $Audio $ScrcpyScale
+        Exec-Live "scrcpy" $scrcpyArgs -IgnoreExitCode
     } else {
         Write-Warning "scrcpy not found on PATH; skipping screen mirror."
     }

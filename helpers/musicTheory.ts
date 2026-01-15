@@ -1,81 +1,88 @@
 // file: helpers/musicTheory.ts
 
-const NOTE_NAMES = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+// Using mixed naming to keep it compact and recognizable
+export const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B'];
+
+// Definitions of chord shapes (intervals in semitones relative to root)
+const CHORD_SHAPES = [
+  { name: '', intervals: [0, 4, 7] },          // Major
+  { name: 'm', intervals: [0, 3, 7] },         // Minor
+  { name: '7', intervals: [0, 4, 10] },        // Dom7 (Shell - no 5th)
+  { name: '7', intervals: [0, 4, 7, 10] },     // Dom7
+  { name: 'maj7', intervals: [0, 4, 11] },     // Maj7 (Shell)
+  { name: 'maj7', intervals: [0, 4, 7, 11] },  // Maj7
+  { name: 'm7', intervals: [0, 3, 10] },       // Min7 (Shell)
+  { name: 'm7', intervals: [0, 3, 7, 10] },    // Min7
+  { name: '°', intervals: [0, 3, 6] },         // Dim
+  { name: '°7', intervals: [0, 3, 6, 9] },     // Full Dim
+  { name: '+', intervals: [0, 4, 8] },         // Aug
+  { name: '5', intervals: [0, 7] },            // Power Chord
+];
 
 /**
- * Converts a set of MIDI numbers into a compact chord name.
- * Prioritizes 2-note intervals and standard triads.
+ * Analyzes a set of MIDI numbers and returns the Root Pitch Class and Chord Type.
  */
-export const getCompactChordName = (midiNotes: number[]): string | null => {
+export const analyzeChordStructure = (midiNotes: number[]): { rootPC: number, type: string } | null => {
   if (midiNotes.length < 2) return null;
 
-  // 1. Sort and normalize to 0-11 (Pitch Classes)
-  // We keep the original sorted MIDI to determine the bass note vs highest note later if needed,
-  // but for theory, we need the unique pitch classes.
-  const sortedMidi = [...midiNotes].sort((a, b) => a - b);
-  const rootMidi = sortedMidi[0];
-  
-  // Calculate intervals relative to the lowest note (in semitones)
-  const intervals = sortedMidi.map(n => n - rootMidi);
-  
-  // Get Pitch Classes (0-11) for naming
-  const pcs = sortedMidi.map(n => n % 12);
-  const rootPC = pcs[0];
-  const rootName = NOTE_NAMES[rootPC];
+  // 1. Get unique Pitch Classes (0-11)
+  const pcs = Array.from(new Set(midiNotes.map(n => n % 12))).sort((a, b) => a - b);
 
-  // --- 2-Note Logic (Dyads) ---
-  if (midiNotes.length === 2) {
-    const interval = intervals[1]; // Distance between the two notes
-    
-    // Reduce large intervals (octaves) to simple intervals
-    const simpleInterval = interval % 12;
+  // 2. Try 2-note specific logic (Dyads)
+  if (pcs.length === 2) {
+    const dist = (pcs[1] - pcs[0] + 12) % 12;
+    const n1 = pcs[0];
+    const n2 = pcs[1];
 
-    switch (simpleInterval) {
-      case 3: return `${rootName}m`; // Minor 3rd (e.g., C + Eb) -> Cm
-      case 4: return `${rootName}`;  // Major 3rd (e.g., C + E)  -> C
-      case 7: return `${rootName}5`; // Perfect 5th (e.g., C + G) -> C5 (Power chord)
-      
-      // Inversions (The lower note is NOT the root)
-      case 5: // Perfect 4th (e.g., G + C). C is root.
-        return NOTE_NAMES[pcs[1]]; // Return the top note name (Major implied)
-      case 8: // Minor 6th (e.g., E + C). C is root.
-        return NOTE_NAMES[pcs[1]]; // Return top note (Major implied)
-      case 9: // Major 6th (e.g., G + E). E is root.
-        return `${NOTE_NAMES[pcs[1]]}m`; // Return top note as Minor
-        
-      default: return null; // Too ambiguous or dissonant to label compactly
+    // Distance between the two notes
+    switch (dist) {
+      case 3: return { rootPC: n1, type: 'minor' }; // Minor 3rd -> Implies Minor
+      case 4: return { rootPC: n1, type: 'major' }; // Major 3rd -> Implies Major
+      case 7: return { rootPC: n1, type: '5' };     // Perfect 5th -> Power chord
+      // Inversions
+      case 5: return { rootPC: n2, type: 'major' }; // Perfect 4th (G-C) -> C Major
+      case 8: return { rootPC: n2, type: 'major' }; // Minor 6th (E-C) -> C Major
+      case 9: return { rootPC: n2, type: 'minor' }; // Major 6th (G-E) -> E Minor
+      default: break;
     }
   }
 
-  // --- 3+ Note Logic (Triads/Tetrads) ---
-  
-  // Normalize intervals to 0-11 set to detect shapes regardless of voicing
-  const uniqueIntervals = new Set(pcs.map(pc => (pc - rootPC + 12) % 12));
-  
-  const hasMin3 = uniqueIntervals.has(3);
-  const hasMaj3 = uniqueIntervals.has(4);
-  const hasPerf5 = uniqueIntervals.has(7);
-  const hasMin7 = uniqueIntervals.has(10);
-  const hasMaj7 = uniqueIntervals.has(11);
-  const hasDim5 = uniqueIntervals.has(6);
+  // 3. Shape Matching
+  for (let i = 0; i < pcs.length; i++) {
+    const rootPC = pcs[i];
+    const currentIntervals = pcs.map(pc => (pc - rootPC + 12) % 12).sort((a, b) => a - b);
 
-  // Basic Triads
-  if (hasMaj3 && hasPerf5) return hasMin7 ? `${rootName}7` : rootName; // Major or Dom7
-  if (hasMin3 && hasPerf5) return hasMin7 ? `${rootName}m7` : `${rootName}m`; // Minor
-  
-  // Diminished
-  if (hasMin3 && hasDim5) return `${rootName}°`;
-
-  // Augmented
-  if (hasMaj3 && uniqueIntervals.has(8)) return `${rootName}+`;
-
-  // Inversion Handling (Simple check: if we didn't find a match, try assuming other notes are root)
-  // This is a simplified check for common 1st/2nd inversions if the root position check failed
-  if (!hasMaj3 && !hasMin3) {
-    // Try treating the second note as root
-    // (This logic can be expanded, but keeping it simple for performance)
-    return null; 
+    for (const shape of CHORD_SHAPES) {
+      const isMatch = shape.intervals.every(interval => currentIntervals.includes(interval));
+      if (isMatch) {
+        // Map internal shape names to standard types
+        let type = 'major';
+        if (shape.name === 'm' || shape.name === 'm7') type = 'minor';
+        else if (shape.name === '7' || shape.name === 'maj7') type = 'major';
+        else if (shape.name) type = shape.name;
+        
+        return { rootPC, type };
+      }
+    }
   }
 
   return null;
+};
+
+/**
+ * Converts a set of MIDI numbers into a compact chord name.
+ * Handles inversions and shell voicings (missing 5ths).
+ */
+export const getCompactChordName = (midiNotes: number[]): string | null => {
+  const analysis = analyzeChordStructure(midiNotes);
+  if (!analysis) return null;
+  
+  const rootName = NOTE_NAMES[analysis.rootPC];
+  // Convert back to display name if needed, or just use the type
+  let suffix = '';
+  if (analysis.type === 'minor') suffix = 'm';
+  else if (analysis.type === 'major') suffix = '';
+  else suffix = analysis.type;
+
+  return `${rootName}${suffix}`;
 };

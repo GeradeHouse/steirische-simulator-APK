@@ -5,7 +5,7 @@ import { AdjustmentsHorizontalIcon, ArrowPathIcon } from '@heroicons/react/24/ou
 
 interface Props {
   settings: SoundSettings;
-  onUpdate: (key: keyof SoundSettings, value: number) => void;
+  onUpdate: (key: keyof SoundSettings, value: number | boolean) => void;
   onReset: (key: keyof SoundSettings) => void;
   onResetAll: () => void;
 }
@@ -13,14 +13,25 @@ interface Props {
 interface ControlDef {
   key: keyof SoundSettings;
   label: string;
-  min: number;
-  max: number;
-  step: number;
+  min?: number;
+  max?: number;
+  step?: number;
   tooltip: string;
   unit?: string;
+  type?: 'range' | 'toggle';
 }
 
 const CATEGORIES: { name: string; controls: ControlDef[] }[] = [
+  {
+    name: "Performance & Features",
+    controls: [
+      { key: "enableReverb", label: "Reverb", type: "toggle", tooltip: "Disable to save CPU (Master Chain)." },
+      { key: "enableTubeDistortion", label: "Tube Distortion", type: "toggle", tooltip: "Disable to save CPU (Oversampling)." },
+      { key: "enableAirNoise", label: "Air Noise", type: "toggle", tooltip: "Disable to reduce nodes per note." },
+      { key: "enableMechanicalNoise", label: "Mech Sounds", type: "toggle", tooltip: "Disable click/thud sounds." },
+      { key: "enableBoxResonance", label: "Box Resonance", type: "toggle", tooltip: "Disable body resonance filter." },
+    ]
+  },
   {
     name: "Reed Physics & Tuning",
     controls: [
@@ -132,18 +143,31 @@ export const SoundControls: React.FC<Props> = ({ settings, onUpdate, onReset, on
                         {ctrl.tooltip}
                       </div>
                     </div>
-                    <span>{settings[ctrl.key]} {ctrl.unit}</span>
+                    {ctrl.type !== 'toggle' && <span>{settings[ctrl.key]} {ctrl.unit}</span>}
                   </div>
-                  <input
-                    type="range"
-                    min={ctrl.min}
-                    max={ctrl.max}
-                    step={ctrl.step}
-                    value={settings[ctrl.key]}
-                    onChange={(e) => onUpdate(ctrl.key, parseFloat(e.target.value))}
-                    onDoubleClick={() => onReset(ctrl.key)}
-                    className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-500 hover:accent-indigo-500 transition-colors"
-                  />
+                  
+                  {ctrl.type === 'toggle' ? (
+                    <div className="flex items-center h-6">
+                        <button
+                            onClick={() => onUpdate(ctrl.key, !settings[ctrl.key])}
+                            className={`w-8 h-4 rounded-full transition-colors relative ${settings[ctrl.key] ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                        >
+                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${settings[ctrl.key] ? 'left-4.5 translate-x-0.5' : 'left-0.5'}`} />
+                        </button>
+                        <span className="ml-2 text-[9px] text-gray-500">{settings[ctrl.key] ? 'On' : 'Off'}</span>
+                    </div>
+                  ) : (
+                    <input
+                        type="range"
+                        min={ctrl.min}
+                        max={ctrl.max}
+                        step={ctrl.step}
+                        value={settings[ctrl.key] as number}
+                        onChange={(e) => onUpdate(ctrl.key, parseFloat(e.target.value))}
+                        onDoubleClick={() => onReset(ctrl.key)}
+                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-500 hover:accent-indigo-500 transition-colors"
+                    />
+                  )}
                 </div>
               ))}
             </div>

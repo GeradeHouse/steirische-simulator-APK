@@ -22,7 +22,14 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
   buttonClickVolume: 0.4, palletThudVolume: 0.3, mechanismNoiseRandomness: 0.2, bassButtonClunk: 0.5,
   boxResonanceFreq: 400, boxResonanceAmount: 4, grilleFilterCutoff: 5000, cassottoEffect: 0, bassChamberResonance: 2,
   tubeSaturation: 0, inputGain: 0.5, trebleStereoWidth: 0.3, bassStereoWidth: 0.1, reverbSize: 1.5, reverbMix: 0.1,
-  eqLow: 0, eqMid: 0, eqHigh: 0, masterVolume: 0.4
+  eqLow: 0, eqMid: 0, eqHigh: 0, masterVolume: 0.4,
+  
+  // Performance Defaults
+  enableReverb: true,
+  enableTubeDistortion: true,
+  enableAirNoise: true,
+  enableMechanicalNoise: true,
+  enableBoxResonance: true
 };
 
 // Layout Split Constants (Percentages of original image width)

@@ -73,6 +73,13 @@ export interface SoundSettings {
   eqHigh: number;             // -20 to +20 dB
   
   masterVolume: number;       // 0-1
+
+  // Category 6: Performance & Features
+  enableReverb: boolean;
+  enableTubeDistortion: boolean;
+  enableAirNoise: boolean;
+  enableMechanicalNoise: boolean;
+  enableBoxResonance: boolean;
 }
 
 export interface SavedDirectionEvent {
@@ -88,7 +95,7 @@ export interface MidiProject {
   bpm: number;
   octaveShift: number;
   semitoneShift: number; // Added
-  channelModes: Record<number, 'both' | 'bass' | 'treble' | 'muted'>;
+  channelModes: Record<number, 'both' | 'bass' | 'treble' | 'muted' | 'chord' | 'hidden'>;
   directionEvents: SavedDirectionEvent[];
   fingeringOverrides?: Record<string, string>; // Key: "midi-time-channel", Value: buttonId
 }

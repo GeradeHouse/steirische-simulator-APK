@@ -5,7 +5,7 @@ import { TREBLE_ROWS, BASS_ROWS } from '../constants';
 import { AccordionButton } from './AccordionButton';
 import { PianoRoll } from './PianoRoll';
 import { CANDIDATE_PATHS, SPLIT_LEFT_LIMIT, SPLIT_RIGHT_START } from '../helpers/appConfig';
-import { DirectionEvent } from '../hooks/useMidiPlayer';
+import { DirectionEvent } from '../hooks/midi/types';
 import { getButtonIdsForNote } from '../helpers/midiMap';
 import {
   PencilSquareIcon,
@@ -51,7 +51,7 @@ interface MainStageProps {
     onSelectNote?: (note: any) => void;
     onClearSelection?: () => void;
     flashingNotes?: Set<string>;
-    autoScrollMode?: 'treble' | 'bass' | 'off';
+    autoScrollMode?: 'treble' | 'bass' | 'chord' | 'off';
     isNoteSnapEnabled?: boolean;
   };
 }
