@@ -25,7 +25,7 @@ export const usePianoRollController = ({
   const [selectedTimes, setSelectedTimes] = useState<Set<number>>(new Set());
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ x: number; time: number } | null>(null);
+  const dragStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const prevPinchRef = useRef<{ distX: number; distY: number } | null>(null);
   const pinchAxisRef = useRef<'x' | 'y' | null>(null);
   const onSeekRef = useRef(onSeek);
@@ -151,10 +151,26 @@ export const usePianoRollController = ({
 
   // Drag Logic
   useEffect(() => {
+    let isScrubbingActive: boolean | null = null;
+
     const handleMove = (e: MouseEvent | TouchEvent) => {
       if (!isDragging || !dragStartRef.current) return;
+      
+      const isTouch = 'touches' in e;
+      const clientX = isTouch ? e.touches[0].clientX : e.clientX;
+      const clientY = isTouch ? e.touches[0].clientY : e.clientY;
+
+      if (isTouch) {
+        if (isScrubbingActive === null) {
+          const dx = Math.abs(clientX - dragStartRef.current.x);
+          const dy = Math.abs(clientY - dragStartRef.current.y);
+          if (dx < 10 && dy < 10) return; // Threshold
+          isScrubbingActive = dx > dy;
+        }
+        if (!isScrubbingActive) return; // Allow native scroll
+      }
+
       e.preventDefault();
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
       const dx = clientX - dragStartRef.current.x;
       let newTime = dragStartRef.current.time - (dx / pxPerSec);
       if (isNoteSnapEnabled) {
@@ -186,9 +202,12 @@ export const usePianoRollController = ({
     };
   }, [isDragging, pxPerSec, isNoteSnapEnabled, visibleNotes]);
 
+  const [debugInfo, setDebugInfo] = useState<string>('');
+
   return {
     pxPerSec, setPxPerSec, noteHeight, setNoteHeight, isDragging, setIsDragging,
     selectedTimes, setSelectedTimes, scrollContainerRef, dragStartRef, prevPinchRef, pinchAxisRef,
-    visibleNotes, chordLabels, arrowGroups, MIN_MIDI, MAX_MIDI, TOTAL_HEIGHT
+    visibleNotes, chordLabels, arrowGroups, MIN_MIDI, MAX_MIDI, TOTAL_HEIGHT,
+    debugInfo, setDebugInfo
   };
 };

@@ -1,5 +1,5 @@
 // file: components/PianoRoll.tsx
-import React, { useMemo, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { MidiNote, DirectionEvent, ChannelMode } from '../hooks/midi/types';
 import { Direction } from '../types';
 import { PianoKeys, PianoGrid, ChordLabels, ArrowLayer } from './piano/PianoRollVisuals';
@@ -36,7 +36,8 @@ export const PianoRoll: React.FC<Props> = ({
   const {
     pxPerSec, setPxPerSec, noteHeight, setNoteHeight, isDragging, setIsDragging,
     selectedTimes, setSelectedTimes, scrollContainerRef, dragStartRef, prevPinchRef, pinchAxisRef,
-    visibleNotes, chordLabels, arrowGroups, MIN_MIDI, MAX_MIDI, TOTAL_HEIGHT
+    visibleNotes, chordLabels, arrowGroups, MIN_MIDI, MAX_MIDI, TOTAL_HEIGHT,
+    debugInfo, setDebugInfo
   } = usePianoRollController({
     notes, currentTime, isPlaying, channelModes, octaveShift, semitoneShift, directionEvents, autoScrollMode, isNoteSnapEnabled, onSeek
   });
@@ -45,9 +46,36 @@ export const PianoRoll: React.FC<Props> = ({
   const currentTimeRef = useRef(currentTime);
   useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
 
+  const noteHeightRef = useRef(noteHeight);
+  const pxPerSecRef = useRef(pxPerSec);
+  useLayoutEffect(() => { noteHeightRef.current = noteHeight; }, [noteHeight]);
+  useLayoutEffect(() => { pxPerSecRef.current = pxPerSec; }, [pxPerSec]);
+
+  const zoomAnchorRef = useRef<{ midi: number, focalY: number } | null>(null);
+  const pinchStartRef = useRef<{
+    distX: number; distY: number;
+    h: number; px: number;
+    anchorMidi: number; anchorTime: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (zoomAnchorRef.current && scrollContainerRef.current) {
+      const { midi, focalY } = zoomAnchorRef.current;
+      const noteTop = (MAX_MIDI - midi) * noteHeight;
+      console.error(`[STEIRISCHE] LayoutEffect Scroll: noteHeight=${noteHeight}, midi=${midi.toFixed(2)}, targetTop=${noteTop.toFixed(1)}, scrollTop=${(noteTop - focalY).toFixed(1)}`);
+      scrollContainerRef.current.scrollTop = noteTop - focalY;
+    }
+  }, [noteHeight, MAX_MIDI]);
+
+  // Add a mount log to verify logging works immediately
+  useEffect(() => {
+      console.error("[STEIRISCHE] PianoRoll Controller Mounted - Ready for input");
+  }, []);
+
   useEffect(() => {
     const el = gestureRef.current;
-    if (!el) return;
+    const container = scrollContainerRef.current;
+    if (!el || !container) return;
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
@@ -55,18 +83,47 @@ export const PianoRoll: React.FC<Props> = ({
         setIsDragging(false);
         dragStartRef.current = null;
         pinchAxisRef.current = null;
+        
         const t1 = e.touches[0];
         const t2 = e.touches[1];
-        prevPinchRef.current = { distX: Math.abs(t1.clientX - t2.clientX), distY: Math.abs(t1.clientY - t2.clientY) };
+        const rect = container.getBoundingClientRect();
+        
+        // Initial Distances
+        const distX = Math.abs(t1.clientX - t2.clientX);
+        const distY = Math.abs(t1.clientY - t2.clientY);
+        
+        // Initial Anchors
+        const focalX = (t1.clientX + t2.clientX) / 2 - rect.left;
+        const focalY = (t1.clientY + t2.clientY) / 2 - rect.top;
+        
+        // Calculate Anchor Points based on CURRENT state
+        const absoluteY = container.scrollTop + focalY;
+        const anchorMidi = MAX_MIDI - (absoluteY / noteHeightRef.current);
+        
+        const playheadX = rect.width * 0.2;
+        const distFromPlayhead = focalX - playheadX;
+        const anchorTime = currentTimeRef.current + (distFromPlayhead / pxPerSecRef.current);
+
+        pinchStartRef.current = {
+          distX, distY,
+          h: noteHeightRef.current,
+          px: pxPerSecRef.current,
+          anchorMidi, anchorTime
+        };
+        console.error(`[STEIRISCHE] Pinch Start: distY=${distY.toFixed(1)}, h=${noteHeightRef.current}, anchorMidi=${anchorMidi.toFixed(2)}`);
+        
+        // Keep prevPinchRef for delta checks (locking)
+        prevPinchRef.current = { distX, distY };
+
       } else if (e.touches.length === 1) {
         e.stopPropagation();
         setIsDragging(true);
-        dragStartRef.current = { x: e.touches[0].clientX, time: currentTimeRef.current };
+        dragStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, time: currentTimeRef.current };
       }
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && prevPinchRef.current) {
+      if (e.touches.length === 2 && pinchStartRef.current) {
         e.preventDefault();
         e.stopPropagation();
         
@@ -74,29 +131,94 @@ export const PianoRoll: React.FC<Props> = ({
         const t2 = e.touches[1];
         const distX = Math.abs(t1.clientX - t2.clientX);
         const distY = Math.abs(t1.clientY - t2.clientY);
-        const prev = prevPinchRef.current;
+        const start = pinchStartRef.current;
 
+        // Axis Locking
         if (!pinchAxisRef.current) {
-          const dX = Math.abs(distX - prev.distX);
-          const dY = Math.abs(distY - prev.distY);
+          const dX = Math.abs(distX - start.distX);
+          const dY = Math.abs(distY - start.distY);
           if (dX > 10 || dY > 10) {
             pinchAxisRef.current = dX > dY ? 'x' : 'y';
+            
+            // Reset start values to prevent jump when threshold is crossed
+            const rect = container.getBoundingClientRect();
+            const focalX = (t1.clientX + t2.clientX) / 2 - rect.left;
+            const focalY = (t1.clientY + t2.clientY) / 2 - rect.top;
+            
+            const absoluteY = container.scrollTop + focalY;
+            const anchorMidi = MAX_MIDI - (absoluteY / noteHeightRef.current);
+            
+            const playheadX = rect.width * 0.2;
+            const distFromPlayhead = focalX - playheadX;
+            const anchorTime = currentTimeRef.current + (distFromPlayhead / pxPerSecRef.current);
+
+            pinchStartRef.current = {
+              distX, distY,
+              h: noteHeightRef.current,
+              px: pxPerSecRef.current,
+              anchorMidi, anchorTime
+            };
+            console.error(`[STEIRISCHE] Axis Locked (${pinchAxisRef.current}). Re-based start values to prevent jump.`);
+            return;
           } else {
             return;
           }
         }
 
+        const rect = container.getBoundingClientRect();
+
         if (pinchAxisRef.current === 'x') {
-          if (prev.distX > 0) setPxPerSec(p => Math.max(50, Math.min(1000, p * (distX / prev.distX))));
+          if (start.distX > 10) {
+            const scale = distX / start.distX;
+            const newVal = Math.max(50, Math.min(1000, start.px * scale));
+            
+            const focalX = (t1.clientX + t2.clientX) / 2 - rect.left;
+            const playheadX = rect.width * 0.2;
+            const distFromPlayhead = focalX - playheadX;
+            const newCurrentTime = start.anchorTime - (distFromPlayhead / newVal);
+            
+            setPxPerSec(newVal);
+            pxPerSecRef.current = newVal;
+            
+            if (Math.abs(newCurrentTime - currentTimeRef.current) > 0.001) {
+                onSeek(Math.max(0, newCurrentTime));
+                currentTimeRef.current = Math.max(0, newCurrentTime);
+            }
+          }
         } else {
-          if (prev.distY > 0) setNoteHeight(h => Math.max(10, Math.min(60, h * (distY / prev.distY))));
+          if (start.distY > 10) {
+            const scale = distY / start.distY;
+            const rawVal = start.h * scale;
+            const newVal = Math.max(10, Math.min(60, rawVal));
+            
+            const focalY = (t1.clientY + t2.clientY) / 2 - rect.top;
+            
+            // Store anchor for useLayoutEffect (handles the scale change)
+            zoomAnchorRef.current = { midi: start.anchorMidi, focalY };
+            
+            // Only manually set scrollTop if height is NOT changing (clamped).
+            // If height IS changing, useLayoutEffect will handle the scroll sync to avoid jitter.
+            if (Math.abs(newVal - noteHeightRef.current) < 0.001) {
+                const currentH = noteHeightRef.current;
+                const noteTop = (MAX_MIDI - start.anchorMidi) * currentH;
+                container.scrollTop = noteTop - focalY;
+            }
+
+            setNoteHeight(newVal);
+            
+            const msg = `[STEIRISCHE] Y-Zoom: ${newVal.toFixed(1)}px (Raw: ${rawVal.toFixed(1)}), DistY: ${distY.toFixed(1)}/${start.distY.toFixed(1)}, Scale: ${scale.toFixed(3)}, FocalY: ${focalY.toFixed(0)}`;
+            setDebugInfo(msg);
+            console.error(msg);
+          } else {
+             console.error(`[STEIRISCHE] Y-Zoom Skipped: start.distY too small (${start.distY})`);
+          }
         }
-        
-        prevPinchRef.current = { distX, distY };
       }
     };
 
     const onTouchEnd = () => {
+      if (pinchStartRef.current) console.error("[STEIRISCHE] Pinch End");
+      pinchStartRef.current = null;
       prevPinchRef.current = null;
       pinchAxisRef.current = null;
     };
@@ -186,7 +308,7 @@ export const PianoRoll: React.FC<Props> = ({
     if (e.button === 0) {
         if (onClearSelection) onClearSelection();
         setIsDragging(true);
-        dragStartRef.current = { x: e.clientX, time: currentTime };
+        dragStartRef.current = { x: e.clientX, y: e.clientY, time: currentTime };
     }
   };
 

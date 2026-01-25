@@ -1,0 +1,52 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+
+
+# History
+.history/*
+.lh/*
+
+# Docker
+.dockerignore
+docker-compose.yml
+
+node_modules/*
+
+.extra/*
+
+
+steirische-simulator.code-workspace
+package-lock.json
+assets/*
+generate-file-listing.ps1
+project-files-listing.txt
+.adb-target-ip.txt
+.adb-wifi-connect-port.txt
+build_apk.ps1
+build_adb.ps1
+
+
+# Build output
+dist_apk/*
+
+
