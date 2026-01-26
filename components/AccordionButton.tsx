@@ -1,6 +1,7 @@
 // file: components/AccordionButton.tsx
 import React, { useRef, useState, useEffect } from 'react';
 import { NoteDefinition, Direction } from '../types';
+import { getNoteColor } from '../helpers/visuals';
 
 interface Props {
   pushNote: NoteDefinition;
@@ -69,58 +70,60 @@ const AccordionButtonBase: React.FC<Props> = ({
   const containerStyle = "rounded-full overflow-hidden shadow-sm transition-all duration-75 select-none absolute touch-none flex flex-col aspect-square pointer-events-auto";
   const cursorClass = isEditing ? "cursor-move" : "cursor-pointer";
   
+  // Gleichton: Double border effect
   const borderClass = (isEditing && isSelected) 
     ? "ring-2 ring-blue-500 z-30" 
-    : "border border-[#b0a890] hover:border-[#8c8272]";
+    : isGleichton
+      ? "border-4 border-double border-[#b0a890] hover:border-[#8c8272]" // Double border for Gleichton
+      : "border border-[#b0a890] hover:border-[#8c8272]";
 
   const markedClass = (!isEditing && isMarked) ? 'ring-2 ring-red-400/50 ring-offset-1 ring-offset-transparent' : '';
 
-  const getTextStyle = (isActiveDir: boolean) => {
-    const weight = isActiveDir ? "font-bold" : "font-normal";
-    const size = isBass
-      ? (isActiveDir ? "0.45rem" : "0.4rem")
-      : (isActiveDir ? "0.5rem" : "0.45rem");
-    return `text-[${size}] ${weight} leading-tight`;
-  };
-  const commonTextClasses = `w-full h-full flex justify-center ${isGleichton ? 'text-white' : 'text-black'}`;
+  // --- Contrast System: Backgrounds ---
+  // Active Direction = Beige, Inactive = White.
+  // Gleichton gets a slightly deeper tint (#E5DDBA) to distinguish it.
+  const activeBeige = isGleichton ? '#E5DDBA' : '#F8FAEB';
+  const bgPush = direction === Direction.PUSH ? activeBeige : '#FFFFFF';
+  const bgPull = direction === Direction.PULL ? activeBeige : '#FFFFFF';
 
-  // Active State Visuals
+  // --- Contrast System: Typography ---
+  // Active Direction = Larger + Bold, Inactive = Smaller + Normal
+  const getTextClass = (isHalfActive: boolean) => {
+    const base = "w-full h-full flex justify-center items-center leading-tight transition-all duration-200 ";
+    if (isHalfActive) {
+        return base + (isBass ? "text-[0.5rem] font-bold" : "text-[0.55rem] font-bold");
+    }
+    return base + (isBass ? "text-[0.35rem] font-normal text-gray-300" : "text-[0.4rem] font-normal text-gray-300");
+  };
+
+  // --- Pitch-Based Rings ---
+  const getRingStyle = (note: NoteDefinition, isAlt: boolean) => {
+    const color = getNoteColor(note.midi, note.type as any);
+    if (isAlt) {
+        // Alternative: Dull/Transparent ring
+        return {
+            boxShadow: `inset 0 0 0 3px ${color}40`, // 40 = 25% opacity
+            backgroundColor: `${color}15` // Very faint background tint
+        };
+    }
+    // Active: Bright solid ring
+    return {
+        boxShadow: `inset 0 0 0 3px ${color}`,
+        backgroundColor: `${color}33` // 20% opacity fill
+    };
+  };
+
   const isPushActive = isActive && direction === Direction.PUSH;
   const isPullActive = isActive && direction === Direction.PULL;
   
-  // Dynamic Active Ring Color based on Note Type & Direction
-  const getActiveRingClass = (type: string, dir: Direction) => {
-    const base = "ring-2 ring-inset z-20 ";
-    const isPush = dir === Direction.PUSH;
-
-    if (type === 'bass') {
-      return base + (isPush
-        ? "ring-purple-600 shadow-[inset_0_0_15px_rgba(147,51,234,0.5)] bg-purple-400/20"
-        : "ring-purple-800 shadow-[inset_0_0_15px_rgba(107,33,168,0.5)] bg-purple-600/20");
-    } else if (type === 'chord') {
-      return base + (isPush
-        ? "ring-orange-600 shadow-[inset_0_0_15px_rgba(234,88,12,0.5)] bg-orange-400/20"
-        : "ring-red-600 shadow-[inset_0_0_15px_rgba(220,38,38,0.5)] bg-red-400/20");
-    }
-    // Treble
-    return base + (isPush
-      ? "ring-green-600 shadow-[inset_0_0_15px_rgba(22,163,74,0.5)] bg-green-400/20"
-      : "ring-emerald-700 shadow-[inset_0_0_15px_rgba(4,120,87,0.5)] bg-emerald-600/20");
-  };
-
-  // Duller/Less Saturated Ring for Alternatives
-  const getAlternativeRingClass = (type: string, dir: Direction) => {
-    const base = "ring-2 ring-inset z-30 ";
-    const isPush = dir === Direction.PUSH;
-
-    if (type === 'bass') {
-      return base + (isPush ? "ring-purple-300 bg-purple-100/30" : "ring-purple-400 bg-purple-200/30");
-    } else if (type === 'chord') {
-      return base + (isPush ? "ring-orange-300 bg-orange-100/30" : "ring-red-300 bg-red-100/30");
-    }
-    // Treble
-    return base + (isPush ? "ring-green-300 bg-green-100/30" : "ring-emerald-300 bg-emerald-100/30");
-  };
+  // Determine Ring Styles
+  const pushRingStyle = (isPushActive || (isAlternative && direction === Direction.PUSH)) 
+    ? getRingStyle(pushNote, isAlternative!) 
+    : {};
+    
+  const pullRingStyle = (isPullActive || (isAlternative && direction === Direction.PULL)) 
+    ? getRingStyle(pullNote, isAlternative!) 
+    : {};
 
   // --- 1. Tooltip Delay Logic ---
   // Only show tooltip if the note has been active for >100ms.
@@ -256,7 +259,7 @@ const AccordionButtonBase: React.FC<Props> = ({
       <div
         ref={containerRef}
         className={`${containerStyle} ${cursorClass} ${borderClass} ${markedClass}`}
-        style={style}
+        style={{ ...style, backgroundColor: 'white' }} // Ensure white base
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleStop}
@@ -268,23 +271,21 @@ const AccordionButtonBase: React.FC<Props> = ({
         onDragStart={(e) => { if (!isEditing) e.preventDefault(); }}
       >
         {/* Top Half (Push) */}
-        <div className={`flex-1 w-full ${isGleichton ? 'bg-[#9C6F44]' : 'bg-[#F8FAEB]'} relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-all duration-75 ${
-            isPushActive
-              ? getActiveRingClass(pushNote.type, Direction.PUSH)
-              : (isAlternative && direction === Direction.PUSH ? getAlternativeRingClass(pushNote.type, Direction.PUSH) : '')
-          }`}>
-          <div className={`${commonTextClasses} ${getTextStyle(direction === Direction.PUSH)} items-end pb-[1px]`}>
+        <div
+          className="flex-1 w-full relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-colors duration-200"
+          style={{ backgroundColor: bgPush, ...pushRingStyle }}
+        >
+          <div className={`${getTextClass(direction === Direction.PUSH)} items-end pb-[1px] text-black`}>
             {pushData.midi}
           </div>
         </div>
 
         {/* Bottom Half (Pull) */}
-        <div className={`flex-1 w-full ${isGleichton ? 'bg-[#7E5635]' : 'bg-[#E5DDBA]'} relative rounded-b-full pointer-events-none transition-all duration-75 ${
-            isPullActive
-              ? getActiveRingClass(pullNote.type, Direction.PULL)
-              : (isAlternative && direction === Direction.PULL ? getAlternativeRingClass(pullNote.type, Direction.PULL) : '')
-          }`}>
-          <div className={`${commonTextClasses} ${getTextStyle(direction === Direction.PULL)} items-start pt-[1px]`}>
+        <div
+          className="flex-1 w-full relative rounded-b-full pointer-events-none transition-colors duration-200"
+          style={{ backgroundColor: bgPull, ...pullRingStyle }}
+        >
+          <div className={`${getTextClass(direction === Direction.PULL)} items-start pt-[1px] text-black`}>
             {pullData.midi}
           </div>
         </div>
@@ -301,13 +302,13 @@ const AccordionButtonBase: React.FC<Props> = ({
       
       {/* Active Note Pop-up (Debounced) */}
       {showTooltip && showTooltips && !isEditing && (
-        <div 
+        <div
             className="absolute z-50 pointer-events-none select-none"
-            style={{ 
-                left: style?.left, 
-                top: style?.top, 
+            style={{
+                left: style?.left,
+                top: style?.top,
                 width: 'auto',
-                transform: 'translate(-50%, -140%)' 
+                transform: 'translate(-50%, -140%)'
             }}
         >
           <div className="flex flex-col items-center bg-gray-900/90 text-white text-xs rounded px-2 py-1 shadow-xl backdrop-blur-sm whitespace-nowrap">

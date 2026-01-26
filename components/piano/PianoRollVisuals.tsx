@@ -69,7 +69,7 @@ export const ArrowLayer: React.FC<{
         const items = [];
         const dir = getDirectionAtTime(group.time);
         const isSelected = selectedTimes.has(group.time);
-        const arrowClass = `absolute flex items-center justify-center w-6 h-6 cursor-pointer transition-transform hover:scale-125 z-20 ${isSelected ? 'text-blue-600 drop-shadow-md scale-110' : 'text-gray-800'}`;
+        const arrowClass = `absolute flex items-center justify-center w-6 h-6 cursor-pointer transition-transform hover:scale-125 z-20 ${isSelected ? 'text-blue-600 drop-shadow-md scale-110' : 'text-gray-600 opacity-80'}`;
         const Icon = dir === Direction.PUSH ? ArrowRightIcon : ArrowLeftIcon;
 
         const renderArrow = (midi: number, key: string) => {

@@ -25,12 +25,13 @@ interface Props {
   flashingNotes?: Set<string>;
   autoScrollMode?: 'treble' | 'bass' | 'chord' | 'off';
   isNoteSnapEnabled?: boolean;
+  focusMode?: 'treble' | 'bass' | 'chord' | 'off';
 }
 
 export const PianoRoll: React.FC<Props> = ({
   notes, currentTime, isPlaying, channelModes, direction, onSeek, octaveShift, semitoneShift,
   directionEvents = [], onUpdateDirections, activeMidiHighlights, onNotePreview, editingNote,
-  onSelectNote, onClearSelection, flashingNotes, autoScrollMode, isNoteSnapEnabled
+  onSelectNote, onClearSelection, flashingNotes, autoScrollMode, isNoteSnapEnabled, focusMode = 'off'
 }) => {
   
   const {
@@ -351,6 +352,7 @@ export const PianoRoll: React.FC<Props> = ({
                     e.stopPropagation();
                     if (isPlaying && onNotePreview) onNotePreview(midi, dir, false);
                 }}
+                focusMode={focusMode}
               />
               <ArrowLayer
                 groups={renderedArrows}

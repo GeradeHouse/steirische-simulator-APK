@@ -236,7 +236,7 @@ export const syncScrubbingNotes = (ctx: ScrubberContext): Set<string> => {
                  dir,
                  {
                    silent: !isScrubbingSoundEnabled,
-                   duration: 2.0
+                   duration: 0.2
                  }
                );
                activeScrubbingNotes.add(btnId);
@@ -256,7 +256,7 @@ export const syncScrubbingNotes = (ctx: ScrubberContext): Set<string> => {
              dir,
              {
                silent: !isScrubbingSoundEnabled,
-               duration: 2.0
+               duration: 0.2
              }
            );
            activeScrubbingNotes.add(btnId);

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Direction, NoteDefinition, LayoutMap } from '../types';
 import { TREBLE_ROWS, BASS_ROWS } from '../constants';
@@ -6,7 +6,7 @@ import { AccordionButton } from './AccordionButton';
 import { PianoRoll } from './PianoRoll';
 import { CANDIDATE_PATHS, SPLIT_LEFT_LIMIT, SPLIT_RIGHT_START } from '../helpers/appConfig';
 import { DirectionEvent } from '../hooks/midi/types';
-import { getButtonIdsForNote } from '../helpers/midiMap';
+import { useButtonHighlights } from '../hooks/useButtonHighlights';
 import {
   PencilSquareIcon,
   ExclamationTriangleIcon,
@@ -53,6 +53,7 @@ interface MainStageProps {
     flashingNotes?: Set<string>;
     autoScrollMode?: 'treble' | 'bass' | 'chord' | 'off';
     isNoteSnapEnabled?: boolean;
+    focusMode?: 'treble' | 'bass' | 'chord' | 'off';
   };
 }
 
@@ -73,55 +74,26 @@ export const MainStage: React.FC<MainStageProps> = ({
 }) => {
   
   const isAndroid = Capacitor.getPlatform() === 'android';
-  const TREBLE_BTN_SIZE = isAndroid ? 5.8 : 3.4;
-  const BASS_BTN_SIZE = isAndroid ? 5.9 : 4.3;
+  const TREBLE_BTN_SIZE = isAndroid ? 6.5 : 3.4;
+  const BASS_BTN_SIZE = isAndroid ? 6.5 : 4.3;
 
   // Adjust split start for Android (wider image: ~31.7% width vs 24%)
   const effectiveSplitRightStart = isAndroid ? 68.3 : SPLIT_RIGHT_START;
 
-  // --- 1. Calculate Active MIDI Highlights ---
-  const activeMidiHighlights = useMemo(() => {
-    const highlights = new Set<string>();
-    activeNotes.forEach(id => {
-      const parts = id.split('-');
-      if (parts.length !== 3) return;
-      const type = parts[0];
-      const r = parseInt(parts[1]);
-      const b = parseInt(parts[2]);
-      const rows = type === 'bass' ? BASS_ROWS : TREBLE_ROWS;
-      const def = rows.find(row => row.rowId === r)?.buttons[b];
-      if (def) {
-        const noteDef = direction === Direction.PUSH ? def.push : def.pull;
-        highlights.add(`${noteDef.midi}-${direction}`);
-      }
-    });
-    return highlights;
-  }, [activeNotes, direction]);
+  // --- 1. Logic Hook (Highlights & Interactions) ---
+  const {
+    activeMidiHighlights,
+    handlePianoRollPreview,
+    handleAlternativeClick
+  } = useButtonHighlights({
+    activeNotes,
+    direction,
+    midiData,
+    handleNoteStart,
+    handleNoteStop
+  });
 
-  // --- 2. Handle Piano Roll Note Preview ---
-  const handlePianoRollPreview = (midi: number, dir: Direction, start: boolean) => {
-    const btnIds = getButtonIdsForNote(midi, dir);
-    btnIds.forEach(id => {
-      if (start) {
-        const parts = id.split('-');
-        const typeStr = parts[0];
-        const r = parseInt(parts[1]);
-        const b = parseInt(parts[2]);
-        const rows = typeStr === 'bass' ? BASS_ROWS : TREBLE_ROWS;
-        const def = rows.find(row => row.rowId === r)?.buttons[b];
-        if (def) {
-          const noteDef = dir === Direction.PUSH ? def.push : def.pull;
-          const type = noteDef.type as any;
-          const chordType = noteDef.chordType;
-          handleNoteStart(id, { midi, label: 'Preview' }, type, chordType, dir);
-        }
-      } else {
-        handleNoteStop(id);
-      }
-    });
-  };
-
-  // --- 3. Coordinate Transformation Helper ---
+  // --- 2. Coordinate Transformation Helper ---
   const transformStyle = (id: string, globalLeft: number, globalTop: number, size: number, panel: 'left' | 'right') => {
     let localLeft = 0;
     let localSize = 0;
@@ -164,33 +136,8 @@ export const MainStage: React.FC<MainStageProps> = ({
     const panel = isBassPanel ? 'left' : 'right';
     const style = transformStyle(id, pos.left, pos.top, size, panel);
 
-    // Gleichtone (Unison) Buttons
     const GLEICHTONE_IDS = new Set(['treble-0-4', 'treble-1-5', 'treble-2-6', 'treble-3-6']);
     const isGleichton = GLEICHTONE_IDS.has(id);
-
-    const handleAlternativeClick = () => {
-        if (!midiData?.onFingeringOverride) return;
-        const currentMidiNote = midiData.notes.find(n => {
-            const start = n.time;
-            const end = n.time + n.duration;
-            const t = midiData.currentTime;
-            
-            // Check time overlap
-            if (t < start || t >= end) return false;
-
-            // Check visibility (channel mode)
-            const mode = midiData.channelModes[n.channel] || 'muted';
-            if (mode === 'muted' || mode === 'hidden') return false;
-
-            // Check pitch match (including semitone shift)
-            const shifted = n.midi + (midiData.octaveShift * 12) + midiData.semitoneShift;
-            const noteDef = direction === Direction.PUSH ? mapping.push : mapping.pull;
-            return shifted === noteDef.midi;
-        });
-        if (currentMidiNote) {
-            midiData.onFingeringOverride(currentMidiNote.midi, currentMidiNote.time, currentMidiNote.channel, id);
-        }
-    };
 
     return (
       <AccordionButton
@@ -206,7 +153,7 @@ export const MainStage: React.FC<MainStageProps> = ({
         idLabel={isEditing ? id : undefined}
         isAlternative={isAlternative}
         isGleichton={isGleichton}
-        onAlternativeClick={handleAlternativeClick}
+        onAlternativeClick={() => handleAlternativeClick(id)}
         showTooltips={showTooltips}
         style={style}
         onDragStart={(e) => handleDragStart(e, id)}
@@ -280,6 +227,7 @@ export const MainStage: React.FC<MainStageProps> = ({
                   flashingNotes={midiData.flashingNotes}
                   autoScrollMode={midiData.autoScrollMode}
                   isNoteSnapEnabled={midiData.isNoteSnapEnabled}
+                  focusMode={midiData.focusMode}
                 />
             </div>
           )}

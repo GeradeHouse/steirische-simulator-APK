@@ -2,6 +2,7 @@ import React from 'react';
 import { HandDrawnNote } from './HandDrawnNote';
 import { MidiNote, ChannelMode, Direction } from '../../hooks/midi/types';
 import { getButtonIdsForNote, getNoteKey } from '../../helpers/midiMap';
+import { getNoteColor } from '../../helpers/visuals';
 
 interface Props {
   visibleNotes: MidiNote[];
@@ -19,12 +20,13 @@ interface Props {
   getNoteLabel: (m: number) => string;
   onNoteMouseDown: (e: React.MouseEvent, note: MidiNote, dir: Direction) => void;
   onNoteMouseUp: (e: React.MouseEvent, midi: number, dir: Direction) => void;
+  focusMode?: 'treble' | 'bass' | 'chord' | 'off';
 }
 
 export const PianoRollNotes: React.FC<Props> = ({
   visibleNotes, pxPerSec, noteHeight, octaveShift, semitoneShift, MAX_MIDI, currentTime,
   channelModes, activeMidiHighlights, editingNote, flashingNotes, getDirectionAtTime, getNoteLabel,
-  onNoteMouseDown, onNoteMouseUp
+  onNoteMouseDown, onNoteMouseUp, focusMode = 'off'
 }) => {
   return (
     <>
@@ -79,9 +81,7 @@ export const PianoRollNotes: React.FC<Props> = ({
               isHighlighted={!!isHighlighted}
               isEditing={!!isEditing}
               isFlashing={!!isFlashing}
-              mode={mode as any}
-              direction={noteDir}
-              wobbleId={`wobble${wobbleIdx}`}
+              baseColor={getNoteColor(shiftedMidi, mode as 'treble' | 'bass' | 'chord')}
             />
           </div>
         );

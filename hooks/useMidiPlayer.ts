@@ -325,10 +325,10 @@ export const useMidiPlayer = (audioController: any) => {
     const newIndex = eventQueue.current.findIndex(e => e.time >= newTime);
     eventIndex.current = newIndex === -1 ? eventQueue.current.length : newIndex;
     
-    activeMidiMapping.current.clear();
-    audioController.stopAllNotes();
-    
     if (isPlaying) {
+      activeMidiMapping.current.clear();
+      audioController.stopAllNotes();
+      
       const speedRatio = bpm / originalBpm;
       startTimeRef.current = performance.now() - (newTime * 1000 / speedRatio);
     } else {
