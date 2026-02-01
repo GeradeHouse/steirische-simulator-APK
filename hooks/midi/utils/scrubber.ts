@@ -13,6 +13,7 @@ interface ScrubberContext {
   semitoneShift: number;
   fingeringOverrides: Record<string, string>;
   activeScrubbingNotes: Set<string>;
+  scrubbingNoteCache: Map<string, string>;
   audioController: any;
   isScrubbingSoundEnabled: boolean;
   currentDirection: Direction;
@@ -20,10 +21,10 @@ interface ScrubberContext {
 }
 
 export const syncScrubbingNotes = (ctx: ScrubberContext): Set<string> => {
-  const { 
-    time, allNotes, directionEvents, channelModes, octaveShift, semitoneShift, 
-    fingeringOverrides, activeScrubbingNotes, audioController, 
-    isScrubbingSoundEnabled, currentDirection, setDirection 
+  const {
+    time, allNotes, directionEvents, channelModes, octaveShift, semitoneShift,
+    fingeringOverrides, activeScrubbingNotes, scrubbingNoteCache, audioController,
+    isScrubbingSoundEnabled, currentDirection, setDirection
   } = ctx;
 
   // 1. Determine Direction
@@ -56,6 +57,7 @@ export const syncScrubbingNotes = (ctx: ScrubberContext): Set<string> => {
   // 2. Gather Notes
   const notesToSolve: { note: MidiNote, candidates: string[], allCandidates: string[], shiftedMidi: number }[] = [];
   const chordNotes: MidiNote[] = [];
+  const activeNoteKeys = new Set<string>();
 
   allNotes.forEach(note => {
     if (time >= note.time && time < note.time + note.duration - 0.03) {
@@ -81,16 +83,28 @@ export const syncScrubbingNotes = (ctx: ScrubberContext): Set<string> => {
       if (candidates.length === 0) return;
 
       const key = getNoteKey(note.midi, note.time, note.channel);
+      activeNoteKeys.add(key);
+      
       const overrideId = fingeringOverrides[key];
+      const cachedId = scrubbingNoteCache.get(key);
 
       let validIds = candidates;
+      
       if (overrideId && candidates.includes(overrideId)) {
           validIds = [overrideId];
+      } else if (cachedId && candidates.includes(cachedId)) {
+          validIds = [cachedId];
       }
 
       notesToSolve.push({ note, candidates: validIds, allCandidates: candidates, shiftedMidi });
     }
   });
+
+  for (const key of scrubbingNoteCache.keys()) {
+      if (!activeNoteKeys.has(key)) {
+          scrubbingNoteCache.delete(key);
+      }
+  }
 
   // 3. Group by Time & Sort
   const groups = new Map<number, typeof notesToSolve>();
@@ -153,6 +167,11 @@ export const syncScrubbingNotes = (ctx: ScrubberContext): Set<string> => {
 
       search(0, []);
       finalAssignment.push(...bestGroupAssign);
+      
+      groupItems.forEach((item, i) => {
+          const key = getNoteKey(item.note.midi, item.note.time, item.note.channel);
+          scrubbingNoteCache.set(key, bestGroupAssign[i]);
+      });
   });
 
   // 4b. Solve Chords

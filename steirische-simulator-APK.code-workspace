@@ -6,6 +6,7 @@
 	],
 	"settings": {
 		"java.configuration.updateBuildConfiguration": "automatic",
-		"java.import.gradle.enabled": false
+		"java.import.gradle.enabled": false,
+		"task.allowAutomaticTasks": "on"
 	}
 }

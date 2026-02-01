@@ -50,3 +50,4 @@ build_adb.ps1
 dist_apk/*
 
 
+generate-folded-project-context/*

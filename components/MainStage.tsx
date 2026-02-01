@@ -94,7 +94,7 @@ export const MainStage: React.FC<MainStageProps> = ({
   });
 
   // --- 2. Coordinate Transformation Helper ---
-  const transformStyle = (id: string, globalLeft: number, globalTop: number, size: number, panel: 'left' | 'right') => {
+  const transformStyle = (id: string, globalLeft: number, globalTop: number, size: number, panel: 'left' | 'right', isGleichton: boolean) => {
     let localLeft = 0;
     let localSize = 0;
 
@@ -115,7 +115,7 @@ export const MainStage: React.FC<MainStageProps> = ({
       width: `${localSize}%`,
       position: 'absolute' as const,
       transform: 'translate(-50%, -50%)',
-      zIndex: isEditing && (dragTarget === id || selectedButtonId === id) ? 50 : 10
+      zIndex: isEditing && (dragTarget === id || selectedButtonId === id) ? 50 : (isGleichton ? 5 : 10)
     };
   };
 
@@ -134,10 +134,11 @@ export const MainStage: React.FC<MainStageProps> = ({
     // Determine Panel
     const isBassPanel = id.startsWith('bass');
     const panel = isBassPanel ? 'left' : 'right';
-    const style = transformStyle(id, pos.left, pos.top, size, panel);
-
+    
     const GLEICHTONE_IDS = new Set(['treble-0-4', 'treble-1-5', 'treble-2-6', 'treble-3-6']);
     const isGleichton = GLEICHTONE_IDS.has(id);
+
+    const style = transformStyle(id, pos.left, pos.top, size, panel, isGleichton);
 
     return (
       <AccordionButton

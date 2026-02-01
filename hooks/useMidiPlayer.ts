@@ -51,6 +51,7 @@ export const useMidiPlayer = (audioController: any) => {
   const octaveShiftRef = useRef(0);
   const semitoneShiftRef = useRef(0);
   const activeScrubbingNotes = useRef<Set<string>>(new Set());
+  const scrubbingNoteCache = useRef<Map<string, string>>(new Map());
 
   useEffect(() => { fingeringOverridesRef.current = fingeringOverrides; }, [fingeringOverrides]);
   useEffect(() => {
@@ -195,6 +196,7 @@ export const useMidiPlayer = (audioController: any) => {
 
     activeMidiMapping.current.clear();
     activeScrubbingNotes.current.clear();
+    scrubbingNoteCache.current.clear();
     audioController.stopAllNotes();
   };
 
@@ -211,6 +213,7 @@ export const useMidiPlayer = (audioController: any) => {
       
       activeScrubbingNotes.current.forEach(id => audioController.handleNoteStop(id));
       activeScrubbingNotes.current.clear();
+      scrubbingNoteCache.current.clear();
 
       if (activeMidiMapping.current.size === 0) {
          // Restore active notes logic omitted for brevity, but logic is similar to original
@@ -342,6 +345,7 @@ export const useMidiPlayer = (audioController: any) => {
         semitoneShift: semitoneShiftRef.current,
         fingeringOverrides: fingeringOverridesRef.current,
         activeScrubbingNotes: activeScrubbingNotes.current,
+        scrubbingNoteCache: scrubbingNoteCache.current,
         audioController,
         isScrubbingSoundEnabled,
         currentDirection: directionRef.current,
@@ -356,27 +360,38 @@ export const useMidiPlayer = (audioController: any) => {
     const newOverrides = { ...fingeringOverrides };
     const newFlashing = new Set<string>();
     
+    // 1. Apply to target
     newOverrides[targetKey] = btnId;
     newFlashing.add(targetKey);
 
-    // Propagation logic simplified for brevity but functionally identical
-    const startIndex = allNotes.findIndex(n => n.midi === midi && Math.abs(n.time - time) < 0.001 && n.channel === channel);
-    if (startIndex !== -1) {
-        let currentTarget = allNotes[startIndex];
-        for (let i = startIndex + 1; i < allNotes.length; i++) {
-            const nextNote = allNotes[i];
-            if (nextNote.channel !== channel) continue;
-            if (nextNote.midi === midi) {
-                const nextKey = getNoteKey(nextNote.midi, nextNote.time, nextNote.channel);
-                newOverrides[nextKey] = btnId;
-                newFlashing.add(nextKey);
-                currentTarget = nextNote;
-            } else {
-                if (nextNote.time < (currentTarget.time + currentTarget.duration - 0.05)) continue;
-                break;
+    // 2. Contextual Propagation
+    const CONTEXT_WINDOW = 0.05;
+    const targetNote = allNotes.find(n => n.midi === midi && Math.abs(n.time - time) < 0.001 && n.channel === channel);
+    
+    if (targetNote) {
+        const contextNotes = allNotes.filter(n =>
+            n.channel === channel &&
+            Math.abs(n.time - targetNote.time) < CONTEXT_WINDOW
+        );
+        const contextSignature = contextNotes.map(n => n.midi).sort((a, b) => a - b).join(',');
+
+        allNotes.forEach(n => {
+            if (n.channel === channel && n.midi === midi) {
+                const localContext = allNotes.filter(other =>
+                    other.channel === channel &&
+                    Math.abs(other.time - n.time) < CONTEXT_WINDOW
+                );
+                const localSignature = localContext.map(c => c.midi).sort((a, b) => a - b).join(',');
+
+                if (localSignature === contextSignature) {
+                    const key = getNoteKey(n.midi, n.time, n.channel);
+                    newOverrides[key] = btnId;
+                    newFlashing.add(key);
+                }
             }
-        }
+        });
     }
+
     setFingeringOverrides(newOverrides);
     fingeringOverridesRef.current = newOverrides;
     setFlashingNotes(newFlashing);

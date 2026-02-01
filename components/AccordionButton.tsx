@@ -67,27 +67,22 @@ const AccordionButtonBase: React.FC<Props> = ({
   const pullData = parseLabel(pullNote.label);
 
   // --- Styles ---
-  const containerStyle = "rounded-full overflow-hidden shadow-sm transition-all duration-75 select-none absolute touch-none flex flex-col aspect-square pointer-events-auto";
+  const containerStyle = "rounded-full overflow-hidden transition-all duration-75 select-none absolute touch-none flex flex-col aspect-square pointer-events-auto";
   const cursorClass = isEditing ? "cursor-move" : "cursor-pointer";
   
-  // Gleichton: Double border effect
-  const borderClass = (isEditing && isSelected) 
-    ? "ring-2 ring-blue-500 z-30" 
-    : isGleichton
-      ? "border-4 border-double border-[#b0a890] hover:border-[#8c8272]" // Double border for Gleichton
-      : "border border-[#b0a890] hover:border-[#8c8272]";
+  // Thicker, darker border for all buttons
+  const borderClass = (isEditing && isSelected)
+    ? "ring-2 ring-blue-500 z-30"
+    : "border-[2px] border-[#222] hover:border-black";
 
   const markedClass = (!isEditing && isMarked) ? 'ring-2 ring-red-400/50 ring-offset-1 ring-offset-transparent' : '';
 
   // --- Contrast System: Backgrounds ---
-  // Active Direction = Beige, Inactive = White.
-  // Gleichton gets a slightly deeper tint (#E5DDBA) to distinguish it.
   const activeBeige = isGleichton ? '#E5DDBA' : '#F8FAEB';
   const bgPush = direction === Direction.PUSH ? activeBeige : '#FFFFFF';
   const bgPull = direction === Direction.PULL ? activeBeige : '#FFFFFF';
 
   // --- Contrast System: Typography ---
-  // Active Direction = Larger + Bold, Inactive = Smaller + Normal
   const getTextClass = (isHalfActive: boolean) => {
     const base = "w-full h-full flex justify-center items-center leading-tight transition-all duration-200 ";
     if (isHalfActive) {
@@ -96,34 +91,50 @@ const AccordionButtonBase: React.FC<Props> = ({
     return base + (isBass ? "text-[0.35rem] font-normal text-gray-300" : "text-[0.4rem] font-normal text-gray-300");
   };
 
-  // --- Pitch-Based Rings ---
-  const getRingStyle = (note: NoteDefinition, isAlt: boolean) => {
+  // --- Pitch-Based Fills (Background Only) ---
+  const getFillStyle = (note: NoteDefinition, isAlt: boolean) => {
     const color = getNoteColor(note.midi, note.type as any);
     if (isAlt) {
-        // Alternative: Dull/Transparent ring
-        return {
-            boxShadow: `inset 0 0 0 3px ${color}40`, // 40 = 25% opacity
-            backgroundColor: `${color}15` // Very faint background tint
-        };
+        return { backgroundColor: `${color}15` }; // Very faint background
     }
-    // Active: Bright solid ring
-    return {
-        boxShadow: `inset 0 0 0 3px ${color}`,
-        backgroundColor: `${color}33` // 20% opacity fill
-    };
+    return { backgroundColor: `${color}33` }; // 20% opacity fill
   };
 
   const isPushActive = isActive && direction === Direction.PUSH;
   const isPullActive = isActive && direction === Direction.PULL;
   
-  // Determine Ring Styles
-  const pushRingStyle = (isPushActive || (isAlternative && direction === Direction.PUSH)) 
-    ? getRingStyle(pushNote, isAlternative!) 
+  const pushFillStyle = (isPushActive || (isAlternative && direction === Direction.PUSH))
+    ? getFillStyle(pushNote, isAlternative!)
     : {};
     
-  const pullRingStyle = (isPullActive || (isAlternative && direction === Direction.PULL)) 
-    ? getRingStyle(pullNote, isAlternative!) 
+  const pullFillStyle = (isPullActive || (isAlternative && direction === Direction.PULL))
+    ? getFillStyle(pullNote, isAlternative!)
     : {};
+
+  // --- Dynamic Outer Shadows (Gleichton & Active Rings) ---
+  const shadows: string[] = [];
+  
+  // 1. Gleichton: Double Outer Edge (White Gap + Black Ring)
+  if (isGleichton && !isEditing) {
+      shadows.push("0 0 0 1px white");
+      shadows.push("0 0 0 3px #222");
+  }
+
+  // 2. Active/Alt Ring (Outermost)
+  if (!isEditing && (isActive || isAlternative)) {
+      const note = direction === Direction.PUSH ? pushNote : pullNote;
+      const color = getNoteColor(note.midi, note.type as any);
+      // Ensure ring is outside the Gleichton double-border if present
+      const spread = isGleichton ? 6 : 3;
+      const colorStr = isAlternative ? `${color}66` : color;
+      shadows.push(`0 0 0 ${spread}px ${colorStr}`);
+  }
+
+  const combinedStyle = {
+      ...style,
+      backgroundColor: 'white',
+      boxShadow: shadows.length > 0 ? shadows.join(', ') : undefined
+  };
 
   // --- 1. Tooltip Delay Logic ---
   // Only show tooltip if the note has been active for >100ms.
@@ -259,7 +270,7 @@ const AccordionButtonBase: React.FC<Props> = ({
       <div
         ref={containerRef}
         className={`${containerStyle} ${cursorClass} ${borderClass} ${markedClass}`}
-        style={{ ...style, backgroundColor: 'white' }} // Ensure white base
+        style={combinedStyle}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleStop}
@@ -273,9 +284,9 @@ const AccordionButtonBase: React.FC<Props> = ({
         {/* Top Half (Push) */}
         <div
           className="flex-1 w-full relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-colors duration-200"
-          style={{ backgroundColor: bgPush, ...pushRingStyle }}
+          style={{ backgroundColor: bgPush, ...pushFillStyle }}
         >
-          <div className={`${getTextClass(direction === Direction.PUSH)} items-end pb-[1px] text-black`}>
+          <div className={`${getTextClass(direction === Direction.PUSH)} items-end translate-y-[3px] text-black`}>
             {pushData.midi}
           </div>
         </div>
@@ -283,7 +294,7 @@ const AccordionButtonBase: React.FC<Props> = ({
         {/* Bottom Half (Pull) */}
         <div
           className="flex-1 w-full relative rounded-b-full pointer-events-none transition-colors duration-200"
-          style={{ backgroundColor: bgPull, ...pullRingStyle }}
+          style={{ backgroundColor: bgPull, ...pullFillStyle }}
         >
           <div className={`${getTextClass(direction === Direction.PULL)} items-start pt-[1px] text-black`}>
             {pullData.midi}
