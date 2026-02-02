@@ -1,0 +1,783 @@
+# Project Overview (included; respecting .gitignore)
+# Generated on: 2026-02-02 23:54:34
+# Total included files: 55
+
+# Project structure:
+.
+|-- components/
+|   |-- piano/
+|   |   |-- HandDrawnNote.tsx (76 lines)
+|   |   |-- PianoRollNotes.tsx (108 lines)
+|   |   `-- PianoRollVisuals.tsx (99 lines)
+|   |-- AccordionButton.tsx (360 lines)
+|   |-- MainStage.tsx (260 lines)
+|   |-- MidiControls.tsx (273 lines)
+|   |-- PianoRoll.tsx (374 lines)
+|   |-- ProjectLibrary.tsx (197 lines)
+|   |-- SoundControls.tsx (188 lines)
+|   `-- TopBar.tsx (96 lines)
+|-- helpers/
+|   |-- appConfig.ts (37 lines)
+|   |-- layout_apk.json (246 lines)
+|   |-- layout.json (246 lines)
+|   |-- layoutGenerator.ts (23 lines)
+|   |-- midiMap.ts (66 lines)
+|   |-- musicTheory.ts (89 lines)
+|   |-- projectStorage.ts (56 lines)
+|   `-- visuals.ts (38 lines)
+|-- hooks/
+|   |-- midi/
+|   |   |-- utils/
+|   |   |   |-- parser.ts (89 lines)
+|   |   |   |-- scrubber.ts (287 lines)
+|   |   |   `-- solver.ts (197 lines)
+|   |   `-- types.ts (35 lines)
+|   |-- useAudioController.ts (99 lines)
+|   |-- useBackgroundImage.ts (42 lines)
+|   |-- useButtonHighlights.ts (109 lines)
+|   |-- useLayoutEditor.ts (211 lines)
+|   |-- useMidiPlayer.ts (530 lines)
+|   |-- usePianoRollController.ts (232 lines)
+|   `-- useSoundSettings.ts (48 lines)
+|-- public/
+|   `-- assets/
+|       |-- accordion_line_drawing.png (1 lines)
+|       |-- icon.png (1 lines)
+|       |-- ui_bass_apk.png (1 lines)
+|       |-- ui_bass.png (1 lines)
+|       |-- ui_bellow.png (1 lines)
+|       |-- ui_trebble_apk.png (1 lines)
+|       `-- ui_trebble.png (1 lines)
+|-- services/
+|   |-- audio/
+|   |   |-- generators.ts (81 lines)
+|   |   |-- internalTypes.ts (36 lines)
+|   |   |-- master.ts (105 lines)
+|   |   |-- mechanics.ts (72 lines)
+|   |   `-- voice.ts (307 lines)
+|   |-- audioService.ts (153 lines)
+|   `-- geminiService.ts (56 lines)
+|-- src/
+|   `-- vite-env.d.ts (6 lines)
+|-- App.tsx (301 lines)
+|-- capacitor.config.ts (13 lines)
+|-- constants.ts (215 lines)
+|-- index.html (35 lines)
+|-- index.tsx (15 lines)
+|-- metadata.json (5 lines)
+|-- package.json (30 lines)
+|-- steirische-simulator-APK.code-workspace (12 lines)
+|-- tsconfig.json (29 lines)
+|-- types.ts (101 lines)
+`-- vite.config.ts (35 lines)
+
+
+# Project Files Listing
+
+App.tsx:1-(301)
+```
+16--301 | export default function App() {
+75--92 |   useEffect(() => {
+75--102 |   useEffect(() => {
+78--88 |     const save = () => {
+105--123 |   useEffect(() => {
+106--119 |     const handlePause = () => {
+125--131 |   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+153--191 |         <MainStage
+152--198 |       <div className="absolute inset-0 flex flex-col">
+192--197 |         <MidiControls
+285--290 |               <SoundControls
+284--291 |             {activeOverlay === 'sound' ? (
+```
+
+capacitor.config.ts:1-(13)
+```
+# [no foldable definitions found]
+```
+
+components/AccordionButton.tsx:1-(360)
+```
+6--24 | interface Props {
+1--360 | // file: components/AccordionButton.tsx
+27--36 | const parseLabel = (fullLabel: string) => {
+38--334 | const AccordionButtonBase: React.FC<Props> = ({
+61--64 |   const handleStop = () => {
+86--92 |   const getTextClass = (isHalfActive: boolean) => {
+95--101 |   const getFillStyle = (note: NoteDefinition, isAlt: boolean) => {
+142--152 |   useEffect(() => {
+157--191 |   useEffect(() => {
+160--176 |     const handleGlobalMove = (e: MouseEvent) => {
+178--182 |     const handleGlobalUp = () => {
+187--190 |     return () => {
+195--205 |   const getTargetFromEvent = (clientY: number) => {
+207--218 |   const triggerNote = (clientY: number) => {
+222--240 |   const handleMouseDown = (e: React.MouseEvent) => {
+242--249 |   const handleMouseMove = (e: React.MouseEvent) => {
+251--259 |   const handleTouchStart = (e: React.TouchEvent) => {
+261--265 |   const handleTouchMove = (e: React.TouchEvent) => {
+268--332 |     <>
+267--333 |   return (
+336--358 | const arePropsEqual = (prev: Props, next: Props) => {
+```
+
+components/MainStage.tsx:1-(260)
+```
+16--58 | interface MainStageProps {
+1--259 | import React from 'react';
+60--259 | export const MainStage: React.FC<MainStageProps> = ({
+97--120 |   const transformStyle = (id: string, globalLeft: number, globalTop: number, size: number, panel: 'left' | 'right', isGleichton: boolean) => {
+122--165 |   const renderButton = (
+144--163 |       <AccordionButton
+143--164 |     return (
+175--178 |           onMouseDown={(e) => {
+190--197 |             {BASS_ROWS.map((row, rIdx) => (
+191--196 |                 row.buttons.map((btn, bIdx) => renderButton(
+212--232 |                <PianoRoll
+211--233 |             <div className={`absolute ${Capacitor.getPlatform() === 'android' ? 'top-[4%] bottom-[12%]' : 'top-[18%] bottom-[18%]'} left-0 right-0 z-0 opacity-90 shadow-inner`}>
+246--252 |             {TREBLE_ROWS.map((row, rIdx) => (
+247--251 |                 row.buttons.map((btn, bIdx) => renderButton(
+```
+
+components/MidiControls.tsx:1-(273)
+```
+8--13 | interface Props {
+1--273 | import React, { useState, useEffect } from 'react';
+19--38 |   useEffect(() => {
+23--28 |     const updatePosition = () => {
+34--37 |     return () => {
+43--51 |   const handlePressStart = (ch: number) => {
+45--50 |     pressTimer.current = setTimeout(() => {
+53--58 |   const handlePressEnd = () => {
+60--63 |   const handleChannelClick = (ch: number) => {
+65--69 |   const formatTime = (t: number) => {
+71--75 |   const handleBpmAdjust = (e: React.MouseEvent, delta: number) => {
+124--147 |                 {player.availableChannels.map((ch: number) => {
+```
+
+components/piano/HandDrawnNote.tsx:1-(76)
+```
+4--14 | interface Props {
+1--76 | import React from 'react';
+16--76 | export const HandDrawnNote: React.FC<Props> = ({
+54--68 |       <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+53--74 |     <div className="w-full h-full relative">
+55--60 |         <rect 
+61--67 |         <text
+```
+
+components/piano/PianoRollNotes.tsx:1-(108)
+```
+8--25 | interface Props {
+1--107 | import React from 'react';
+27--107 | export const PianoRollNotes: React.FC<Props> = ({
+33--105 |     <>
+32--106 |   return (
+34--104 |       {visibleNotes.map((note, idx) => {
+44--48 |         const hasMapping = allIds.some(id => {
+55--59 |             const hasMappingOther = otherIds.some(id => {
+91--101 |             <HandDrawnNote
+77--102 |           <div
+```
+
+components/piano/PianoRollVisuals.tsx:1-(99)
+```
+5--21 | export const PianoKeys: React.FC<{ rows: number[], noteHeight: number, getNoteLabel: (m: number) => string, isBlackKey: (m: number) => boolean }> = ({ rows, noteHeight, getNoteLabel, isBlackKey }) => (
+7--19 |     {rows.map(midi => (
+23--36 | export const PianoGrid: React.FC<{ rows: number[], noteHeight: number, isBlackKey: (m: number) => boolean }> = ({ rows, noteHeight, isBlackKey }) => (
+25--34 |     {rows.map(midi => (
+38--54 | export const ChordLabels: React.FC<{ labels: any[], pxPerSec: number }> = ({ labels, pxPerSec }) => (
+39--53 |   <>
+40--52 |     {labels.map((label, idx) => (
+66--98 | }> = ({ groups, pxPerSec, noteHeight, octaveShift, semitoneShift, MAX_MIDI, selectedTimes, getDirectionAtTime, onArrowClick }) => (
+56--98 | export const ArrowLayer: React.FC<{ 
+67--97 |   <>
+68--96 |     {groups.map((group) => {
+75--90 |         const renderArrow = (midi: number, key: string) => {
+```
+
+components/PianoRoll.tsx:1-(374)
+```
+9--29 | interface Props {
+1--373 | // file: components/PianoRoll.tsx
+31--373 | export const PianoRoll: React.FC<Props> = ({
+62--69 |   useLayoutEffect(() => {
+76--238 |   useEffect(() => {
+81--124 |     const onTouchStart = (e: TouchEvent) => {
+126--218 |     const onTouchMove = (e: TouchEvent) => {
+220--225 |     const onTouchEnd = () => {
+232--237 |     return () => {
+257--261 |   const rows = useMemo(() => {
+263--267 |   const getNoteLabel = (midi: number) => {
+271--278 |   const getDirectionAtTime = (time: number) => {
+280--305 |   const handleArrowClick = (e: React.MouseEvent, time: number, currentDir: Direction) => {
+307--314 |   const handleMouseDown = (e: React.MouseEvent) => {
+332--356 |               <PianoRollNotes
+330--368 |            <div className="absolute top-0 bottom-0 left-[20%] will-change-transform z-10" style={{ transform: `translateX(-${currentTime * pxPerSec}px)` }}>
+346--350 |                 onNoteMouseDown={(e, note, dir) => {
+351--354 |                 onNoteMouseUp={(e, midi, dir) => {
+357--367 |               <ArrowLayer
+```
+
+components/ProjectLibrary.tsx:1-(197)
+```
+6--9 | interface Props {
+1--197 | import React, { useState, useEffect, useRef } from 'react';
+11--197 | export const ProjectLibrary: React.FC<Props> = ({ player, onClose }) => {
+22--26 |   useEffect(() => {
+34--54 |   const handleSave = (asNew: boolean) => {
+56--61 |   const handleLoad = (id: string) => {
+63--69 |   const handleDelete = (id: string, e: React.MouseEvent) => {
+84--89 |         onChange={(e) => {
+99--107 |             <label className="flex items-center gap-1 cursor-pointer">
+98--108 |           {player.currentProjectId && (
+111--155 |         {isSaving ? (
+160--193 |         {projects.length === 0 ? (
+165--192 |           projects.map(p => (
+```
+
+components/SoundControls.tsx:1-(188)
+```
+6--11 | interface Props {
+1--188 | // file: components/SoundControls.tsx
+13--23 | interface ControlDef {
+97--188 | export const SoundControls: React.FC<Props> = ({ settings, onUpdate, onReset, onResetAll }) => {
+131--180 |         {CATEGORIES.map((cat) => (
+137--177 |               {cat.controls.map((ctrl) => {
+152--174 |                     {ctrl.type === 'toggle' ? (
+```
+
+components/TopBar.tsx:1-(96)
+```
+12--23 | interface TopBarProps {
+1--96 | // file: components/TopBar.tsx
+25--96 | export const TopBar: React.FC<TopBarProps> = ({
+```
+
+constants.ts:1-(215)
+```
+4--7 | interface ButtonDef {
+1--215 | // file: constants.ts
+9--12 | interface RowDef {
+```
+
+helpers/appConfig.ts:1-(37)
+```
+# [no foldable definitions found]
+```
+
+helpers/layout_apk.json:1-(246)
+```
+1--246 | {
+2--5 |   "bass-0-0": {
+6--9 |   "bass-0-1": {
+10--13 |   "bass-0-2": {
+14--17 |   "bass-0-3": {
+18--21 |   "bass-0-4": {
+22--25 |   "bass-0-5": {
+26--29 |   "bass-0-6": {
+30--33 |   "bass-0-7": {
+34--37 |   "bass-1-0": {
+38--41 |   "bass-1-1": {
+42--45 |   "bass-1-2": {
+46--49 |   "bass-1-3": {
+50--53 |   "bass-1-4": {
+54--57 |   "bass-1-5": {
+58--61 |   "bass-1-6": {
+62--65 |   "treble-0-0": {
+66--69 |   "treble-0-1": {
+70--73 |   "treble-0-2": {
+74--77 |   "treble-0-3": {
+78--81 |   "treble-0-4": {
+82--85 |   "treble-0-5": {
+86--89 |   "treble-0-6": {
+90--93 |   "treble-0-7": {
+94--97 |   "treble-0-8": {
+98--101 |   "treble-0-9": {
+102--105 |   "treble-1-0": {
+106--109 |   "treble-1-1": {
+110--113 |   "treble-1-2": {
+114--117 |   "treble-1-3": {
+118--121 |   "treble-1-4": {
+122--125 |   "treble-1-5": {
+126--129 |   "treble-1-6": {
+130--133 |   "treble-1-7": {
+134--137 |   "treble-1-8": {
+138--141 |   "treble-1-9": {
+142--145 |   "treble-1-10": {
+146--149 |   "treble-2-0": {
+150--153 |   "treble-2-1": {
+154--157 |   "treble-2-2": {
+158--161 |   "treble-2-3": {
+162--165 |   "treble-2-4": {
+166--169 |   "treble-2-5": {
+170--173 |   "treble-2-6": {
+174--177 |   "treble-2-7": {
+178--181 |   "treble-2-8": {
+182--185 |   "treble-2-9": {
+186--189 |   "treble-2-10": {
+190--193 |   "treble-2-11": {
+194--197 |   "treble-3-0": {
+198--201 |   "treble-3-1": {
+202--205 |   "treble-3-2": {
+206--209 |   "treble-3-3": {
+210--213 |   "treble-3-4": {
+214--217 |   "treble-3-5": {
+218--221 |   "treble-3-6": {
+222--225 |   "treble-3-7": {
+226--229 |   "treble-3-8": {
+230--233 |   "treble-3-9": {
+234--237 |   "treble-3-10": {
+238--241 |   "treble-3-11": {
+242--245 |   "treble-3-12": {
+```
+
+helpers/layout.json:1-(246)
+```
+1--246 | {
+2--5 |   "bass-0-0": {
+6--9 |   "bass-0-1": {
+10--13 |   "bass-0-2": {
+14--17 |   "bass-0-3": {
+18--21 |   "bass-0-4": {
+22--25 |   "bass-0-5": {
+26--29 |   "bass-0-6": {
+30--33 |   "bass-0-7": {
+34--37 |   "bass-1-0": {
+38--41 |   "bass-1-1": {
+42--45 |   "bass-1-2": {
+46--49 |   "bass-1-3": {
+50--53 |   "bass-1-4": {
+54--57 |   "bass-1-5": {
+58--61 |   "bass-1-6": {
+62--65 |   "treble-0-0": {
+66--69 |   "treble-0-1": {
+70--73 |   "treble-0-2": {
+74--77 |   "treble-0-3": {
+78--81 |   "treble-0-4": {
+82--85 |   "treble-0-5": {
+86--89 |   "treble-0-6": {
+90--93 |   "treble-0-7": {
+94--97 |   "treble-0-8": {
+98--101 |   "treble-0-9": {
+102--105 |   "treble-1-0": {
+106--109 |   "treble-1-1": {
+110--113 |   "treble-1-2": {
+114--117 |   "treble-1-3": {
+118--121 |   "treble-1-4": {
+122--125 |   "treble-1-5": {
+126--129 |   "treble-1-6": {
+130--133 |   "treble-1-7": {
+134--137 |   "treble-1-8": {
+138--141 |   "treble-1-9": {
+142--145 |   "treble-1-10": {
+146--149 |   "treble-2-0": {
+150--153 |   "treble-2-1": {
+154--157 |   "treble-2-2": {
+158--161 |   "treble-2-3": {
+162--165 |   "treble-2-4": {
+166--169 |   "treble-2-5": {
+170--173 |   "treble-2-6": {
+174--177 |   "treble-2-7": {
+178--181 |   "treble-2-8": {
+182--185 |   "treble-2-9": {
+186--189 |   "treble-2-10": {
+190--193 |   "treble-2-11": {
+194--197 |   "treble-3-0": {
+198--201 |   "treble-3-1": {
+202--205 |   "treble-3-2": {
+206--209 |   "treble-3-3": {
+210--213 |   "treble-3-4": {
+214--217 |   "treble-3-5": {
+218--221 |   "treble-3-6": {
+222--225 |   "treble-3-7": {
+226--229 |   "treble-3-8": {
+230--233 |   "treble-3-9": {
+234--237 |   "treble-3-10": {
+238--241 |   "treble-3-11": {
+242--245 |   "treble-3-12": {
+```
+
+helpers/layoutGenerator.ts:1-(23)
+```
+7--22 | export const generateDefaultLayout = async (): Promise<LayoutMap> => {
+```
+
+helpers/midiMap.ts:1-(66)
+```
+10--15 | export const getButtonIdsForNote = (midi: number, direction: Direction): string[] => {
+18--21 | export const getButtonIdForNote = (midi: number, direction: Direction): string | undefined => {
+23--49 | const buildMaps = () => {
+27--45 |   const processRows = (rows: any[], prefix: string) => {
+28--44 |     rows.forEach((row, rIdx) => {
+29--43 |       row.buttons.forEach((btn: any, bIdx: number) => {
+58--66 | export const getButtonCoords = (id: string): { r: number, c: number } => {
+```
+
+helpers/musicTheory.ts:1-(89)
+```
+25--70 | export const analyzeChordStructure = (midiNotes: number[]): { rootPC: number, type: string } | null => {
+38--47 |     switch (dist) {
+32--48 |   if (pcs.length === 2) {
+76--88 | export const getCompactChordName = (midiNotes: number[]): string | null => {
+```
+
+helpers/projectStorage.ts:1-(56)
+```
+6--14 | export const getProjectList = (): { id: string; name: string; lastModified: number }[] => {
+16--24 | export const loadProject = (id: string): MidiProject | null => {
+26--46 | export const saveProject = (project: MidiProject): void => {
+48--56 | export const deleteProject = (id: string): void => {
+```
+
+helpers/visuals.ts:1-(38)
+```
+19--38 | export const getNoteColor = (midi: number, type: 'treble' | 'bass' | 'chord'): string => {
+```
+
+hooks/midi/types.ts:1-(35)
+```
+5--12 | export interface MidiNote {
+14--23 | export interface MidiEvent {
+25--28 | export interface DirectionEvent {
+30--34 | export interface ActiveMidiMapping {
+```
+
+hooks/midi/utils/parser.ts:1-(89)
+```
+5--14 | export interface ParseResult {
+16--88 | export const parseMidiData = async (buffer: ArrayBuffer, name: string): Promise<ParseResult> => {
+29--49 |   midi.tracks.forEach(track => {
+31--34 |     track.notes.forEach(note => {
+37--48 |     trackEvents.forEach((e: any) => {
+52--63 |   midi.tracks.forEach(track => {
+53--62 |     track.notes.forEach(note => {
+71--76 |   events.sort((a, b) => {
+```
+
+hooks/midi/utils/scrubber.ts:1-(287)
+```
+7--21 | interface ScrubberContext {
+1--286 | import { Direction } from '../../../types';
+23--286 | export const syncScrubbingNotes = (ctx: ScrubberContext): Set<string> => {
+62--101 |   allNotes.forEach(note => {
+75--81 |       const candidates = allBtnIds.filter(btnId => {
+111--115 |   notesToSolve.forEach(item => {
+122--127 |   const getCost = (id1: string, id2: string) => {
+129--175 |   sortedTimes.forEach(t => {
+134--166 |       const search = (idx: number, current: string[]) => {
+171--174 |       groupItems.forEach((item, i) => {
+181--184 |       chordNotes.forEach(n => {
+186--207 |       chordGroups.forEach((midis) => {
+215--220 |   activeScrubbingNotes.forEach(id => {
+223--264 |   sortedTimes.forEach(t => {
+225--263 |       groupItems.forEach(item => {
+267--283 |   chordButtons.forEach(item => {
+```
+
+hooks/midi/utils/solver.ts:1-(197)
+```
+7--15 | interface SolverContext {
+1--196 | import { Direction } from '../../../types';
+17--196 | export const solveAndPlayBatch = (
+29--37 |   events.forEach(e => {
+43--66 |       standardEvents.forEach(e => {
+48--53 |          const candidates = allIds.filter(id => {
+72--81 |           const getCost = (id1: string, id2: string) => {
+83--109 |           const search = (idx: number, current: string[]) => {
+113--136 |           bestAssignment.forEach((btnId, idx) => {
+143--147 |       chordEvents.forEach(e => {
+149--194 |       channelGroups.forEach((groupEvents, channel) => {
+176--183 |                   groupEvents.forEach(e => {
+```
+
+hooks/useAudioController.ts:1-(99)
+```
+6--99 | export const useAudioController = (isEditing: boolean) => {
+15--39 |   const handleNoteStart = (
+34--38 |     setActiveNotes(prev => {
+41--48 |   const handleNoteStop = (id: string) => {
+43--47 |     setActiveNotes(prev => {
+50--53 |   const stopAllNotes = () => {
+56--85 |   useEffect(() => {
+63--83 |     const timeoutId = setTimeout(async () => {
+```
+
+hooks/useBackgroundImage.ts:1-(42)
+```
+4--42 | export const useBackgroundImage = () => {
+10--18 |   const handleImgError = () => {
+24--31 |   const applyManualPath = (e: React.FormEvent) => {
+```
+
+hooks/useButtonHighlights.ts:1-(109)
+```
+6--13 | interface MidiDataSubset {
+1--109 | import { useMemo } from 'react';
+15--21 | interface UseButtonHighlightsProps {
+23--109 | export const useButtonHighlights = ({
+32--40 |   const getButtonDef = (id: string) => {
+43--53 |   const activeMidiHighlights = useMemo(() => {
+45--51 |     activeNotes.forEach(id => {
+56--71 |   const handlePianoRollPreview = (midi: number, dir: Direction, start: boolean) => {
+58--70 |     btnIds.forEach(id => {
+74--102 |   const handleAlternativeClick = (id: string) => {
+82--97 |     const currentMidiNote = midiData.notes.find(n => {
+```
+
+hooks/useLayoutEditor.ts:1-(211)
+```
+7--211 | export const useLayoutEditor = (containerRef: RefObject<HTMLDivElement>) => {
+14--29 |   useEffect(() => {
+15--27 |     const initLayout = async () => {
+32--36 |   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, id: string) => {
+38--56 |   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+52--55 |     setLayout(prev => ({
+63--76 |   useEffect(() => {
+70--75 |     return () => {
+79--119 |   useEffect(() => {
+82--115 |     const handleKeyDown = (e: KeyboardEvent) => {
+97--113 |         setLayout(prev => {
+102--107 |           switch (e.key) {
+122--126 |   const saveLayout = () => {
+128--134 |   const resetLayout = async () => {
+136--154 |   const handleImportLayout = (file: File) => {
+138--152 |     reader.onload = (event) => {
+156--196 |   const handleExportLayout = async () => {
+```
+
+hooks/useMidiPlayer.ts:1-(530)
+```
+13--529 | export const useMidiPlayer = (audioController: any) => {
+58--63 |   useEffect(() => {
+67--72 |   const setOctaveShift = (val: number) => {
+74--79 |   const setSemitoneShift = (val: number) => {
+81--94 |   const cycleChannelMode = (channel: number) => {
+82--93 |     setChannelModes(prev => {
+96--103 |   const cycleAutoScrollMode = () => {
+97--102 |     setAutoScrollMode(prev => {
+105--133 |   const updateDirections = (updates: { time: number, direction: Direction }[]) => {
+106--114 |     setDirectionEvents(prev => {
+108--112 |       updates.forEach(update => {
+117--120 |     const filteredQueue = currentQueue.filter(e => {
+126--131 |     filteredQueue.sort((a, b) => {
+135--153 |   const loadMidiFile = async (file: File) => {
+137--151 |     reader.onload = async (e) => {
+155--185 |   const applyParsedData = (parsed: any) => {
+168--171 |     const visibleNotes = parsed.allNotes.filter((n: MidiNote) => {
+188--207 |   const resetPlayerStateOnly = (targetTime: number, dirs: DirectionEvent[]) => {
+209--242 |   const resetPlayer = () => {
+212--215 |     const visibleNotes = allNotes.filter(n => {
+244--268 |   const togglePlay = () => {
+270--312 |   const loop = () => {
+279--291 |     const flushBatch = () => {
+314--317 |   useEffect(() => {
+319--365 |   const processEvent = (event: MidiEvent) => {
+330--336 |               const syntheticEvents: MidiEvent[] = activeNotesData.map((data: ActiveMidiMapping) => ({
+367--399 |   const seek = (time: number) => {
+401--442 |   const setFingeringOverride = (midi: number, time: number, channel: number, btnId: string) => {
+421--435 |         allNotes.forEach(n => {
+444--466 |   const selectNote = (note: MidiNote) => {
+468--484 |   const deleteChannel = (channel: number) => {
+471--479 |     keysToRemove.forEach(key => {
+486--505 |   const loadProject = async (project: MidiProject) => {
+507--518 |   const getProjectState = (): Omit<MidiProject, 'id' | 'name' | 'lastModified'> | null => {
+```
+
+hooks/usePianoRollController.ts:1-(232)
+```
+6--17 | interface Props {
+1--231 | import { useState, useRef, useEffect, useMemo } from 'react';
+19--231 | export const usePianoRollController = ({
+40--56 |   useEffect(() => {
+43--53 |     const onWheel = (e: WheelEvent) => {
+58--70 |   const visibleNotes = useMemo(() => {
+59--69 |     return notes.filter(n => {
+72--104 |   const chordLabels = useMemo(() => {
+73--100 |     const getLabels = (subset: MidiNote[]) => {
+80--86 |         sorted.forEach((note) => {
+89--98 |         groups.forEach(group => {
+106--122 |   const arrowGroups = useMemo(() => {
+109--120 |     sorted.forEach(note => {
+125--143 |   useEffect(() => {
+132--135 |     relevantNotes.forEach(n => {
+146--168 |   useEffect(() => {
+155--159 |     notesToUse.forEach(n => {
+171--221 |   useEffect(() => {
+174--207 |     const handleMove = (e: MouseEvent | TouchEvent) => {
+215--220 |     return () => {
+```
+
+hooks/useSoundSettings.ts:1-(48)
+```
+6--48 | export const useSoundSettings = () => {
+7--16 |   const [settings, setSettings] = useState<SoundSettings>(() => {
+23--28 |   const updateSetting = (key: keyof SoundSettings, value: number | boolean) => {
+34--40 |   const resetAllSettings = () => {
+```
+
+index.html:1-(35)
+```
+1--35 | <!DOCTYPE html>
+2--35 | <html lang="nl">
+3--30 |   <head>
+8--29 |     <style>
+31--34 |   <body class="bg-gray-50 text-gray-900 overflow-hidden">
+```
+
+index.tsx:1-(15)
+```
+# [no foldable definitions found]
+```
+
+metadata.json:1-(5)
+```
+1--5 | {
+```
+
+package.json:1-(30)
+```
+1--29 | {
+6--10 |   "scripts": {
+11--20 |   "dependencies": {
+21--28 |   "devDependencies": {
+```
+
+public/assets/accordion_line_drawing.png:1-(1)
+```
+# [file omitted: size exceeds limit]
+```
+
+public/assets/icon.png:1-(1)
+```
+# [binary file omitted]
+```
+
+public/assets/ui_bass_apk.png:1-(1)
+```
+# [binary file omitted]
+```
+
+public/assets/ui_bass.png:1-(1)
+```
+# [binary file omitted]
+```
+
+public/assets/ui_bellow.png:1-(1)
+```
+# [binary file omitted]
+```
+
+public/assets/ui_trebble_apk.png:1-(1)
+```
+# [binary file omitted]
+```
+
+public/assets/ui_trebble.png:1-(1)
+```
+# [binary file omitted]
+```
+
+services/audio/generators.ts:1-(81)
+```
+8--22 | export const makeDistortionCurve = (amount: number): Float32Array => {
+24--36 | export const generateReverbImpulse = (ctx: AudioContext, duration: number): AudioBuffer => {
+38--56 | export const generateNoiseBuffer = (ctx: AudioContext): AudioBuffer => {
+58--69 | export const generateTrebleWave = (ctx: AudioContext, settings: SoundSettings): PeriodicWave => {
+71--81 | export const generateBassWave = (ctx: AudioContext, settings: SoundSettings): PeriodicWave => {
+```
+
+services/audio/internalTypes.ts:1-(36)
+```
+4--17 | export interface ActiveVoice {
+19--23 | export interface AudioResources {
+25--36 | export interface MasterChain {
+```
+
+services/audio/master.ts:1-(105)
+```
+6--81 | export const setupMasterChain = (ctx: AudioContext, settings: SoundSettings): MasterChain => {
+83--105 | export const updateMasterChain = (ctx: AudioContext, chain: MasterChain, settings: SoundSettings) => {
+```
+
+services/audio/mechanics.ts:1-(72)
+```
+5--72 | export const playMechanicalSound = (
+```
+
+services/audio/voice.ts:1-(307)
+```
+7--70 | const createOscillator = (
+72--234 | export const createVoice = (
+195--200 |     voicing.forEach(([interval, vol], index) => {
+236--270 | export const updateVoice = (voice: ActiveVoice, settings: SoundSettings, now: number) => {
+263--268 |     voice.oscillators.forEach((osc, idx) => {
+272--286 | export const stopVoice = (voice: ActiveVoice, ctx: AudioContext, settings: SoundSettings) => {
+282--285 |   setTimeout(() => {
+288--307 | export const killVoice = (voice: ActiveVoice) => {
+```
+
+services/audioService.ts:1-(153)
+```
+9--151 | class AudioService {
+1--153 | // file: services/audioService.ts
+14--18 |   private resources: AudioResources = {
+21--29 |   private settings: SoundSettings = {
+33--43 |   init() {
+45--52 |   private regenerateAssets() {
+54--70 |   updateSettings(newSettings: SoundSettings) {
+72--117 |   playNote(noteId: string, midi: number, type: 'bass' | 'chord' | 'treble', chordType: 'major' | 'minor' | '7th' | 'none' = 'major', direction: Direction = Direction.PUSH, options?: { duration?: number }) {
+119--143 |   stopNote(noteId: string) {
+137--141 |       setTimeout(() => {
+145--150 |   stopAll() {
+```
+
+services/geminiService.ts:1-(56)
+```
+8--55 | export const analyzeChord = async (notes: string[], direction: string): Promise<ChordAnalysis> => {
+```
+
+src/vite-env.d.ts:1-(6)
+```
+# [no foldable definitions found]
+```
+
+steirische-simulator-APK.code-workspace:1-(12)
+```
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"java.configuration.updateBuildConfiguration": "automatic",
+		"java.import.gradle.enabled": false,
+		"task.allowAutomaticTasks": "on"
+	}
+}
+```
+
+tsconfig.json:1-(29)
+```
+1--29 | {
+2--28 |   "compilerOptions": {
+7--11 |     "lib": [
+21--25 |     "paths": {
+```
+
+types.ts:1-(101)
+```
+3--6 | export enum Direction {
+8--13 | export interface NoteDefinition {
+15--18 | export interface ButtonPosition {
+24--28 | export interface ChordAnalysis {
+30--83 | export interface SoundSettings {
+85--88 | export interface SavedDirectionEvent {
+90--101 | export interface MidiProject {
+```
+
+vite.config.ts:1-(35)
+```
+5--34 | export default defineConfig(({ mode }) => {
+```
+

@@ -144,22 +144,28 @@ export const usePianoRollController = ({
 
   // Initial Scroll
   useEffect(() => {
-    if (notes.length === 0 || !scrollContainerRef.current) return;
-    const visible = notes.filter(n => (channelModes[n.channel] || 'muted') !== 'muted' && (channelModes[n.channel] || 'muted') !== 'hidden');
-    if (visible.length === 0) return;
-    const startTime = visible[0].time;
-    const targetNotes = visible.filter(n => n.time < startTime + 4.0).length > 0 ? visible.filter(n => n.time < startTime + 4.0) : visible;
+    if (visibleNotes.length === 0 || !scrollContainerRef.current) return;
+    
+    const startTime = visibleNotes[0].time;
+    // Look at first 4 seconds of visible notes to determine range
+    const targetNotes = visibleNotes.filter(n => n.time < startTime + 4.0);
+    const notesToUse = targetNotes.length > 0 ? targetNotes : visibleNotes;
+
     let maxMidi = -Infinity, minMidi = Infinity;
-    targetNotes.forEach(n => {
+    notesToUse.forEach(n => {
       const shifted = n.midi + (octaveShift * 12) + semitoneShift;
       if (shifted > maxMidi) maxMidi = shifted;
       if (shifted < minMidi) minMidi = shifted;
     });
+
     if (maxMidi === -Infinity) return;
+
     const centerMidi = (maxMidi + minMidi) / 2;
     const centerPixel = (MAX_MIDI - centerMidi) * noteHeight;
+    
+    // Scroll to center
     scrollContainerRef.current.scrollTop = Math.max(0, centerPixel - (scrollContainerRef.current.clientHeight / 2));
-  }, [notes, octaveShift, semitoneShift, MAX_MIDI, noteHeight, channelModes]);
+  }, [visibleNotes, octaveShift, semitoneShift, MAX_MIDI, noteHeight]);
 
   // Drag Logic
   useEffect(() => {

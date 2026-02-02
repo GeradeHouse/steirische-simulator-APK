@@ -1,6 +1,7 @@
 import React from 'react';
 import { HandDrawnNote } from './HandDrawnNote';
-import { MidiNote, ChannelMode, Direction } from '../../hooks/midi/types';
+import { MidiNote, ChannelMode } from '../../hooks/midi/types';
+import { Direction } from '../../types';
 import { getButtonIdsForNote, getNoteKey } from '../../helpers/midiMap';
 import { getNoteColor } from '../../helpers/visuals';
 
@@ -45,6 +46,20 @@ export const PianoRollNotes: React.FC<Props> = ({
           if (mode === 'bass') return id.startsWith('bass');
           return true;
         });
+
+        // Check if impossible (no mapping in EITHER direction)
+        let isImpossible = false;
+        if (!hasMapping) {
+            const otherDir = noteDir === Direction.PUSH ? Direction.PULL : Direction.PUSH;
+            const otherIds = getButtonIdsForNote(shiftedMidi, otherDir);
+            const hasMappingOther = otherIds.some(id => {
+                if (mode === 'treble') return id.startsWith('treble');
+                if (mode === 'bass') return id.startsWith('bass');
+                return true;
+            });
+            if (!hasMappingOther) isImpossible = true;
+        }
+
         const highlightKey = `${shiftedMidi}-${noteDir}`;
         const isUnderPlayhead = currentTime >= note.time && currentTime < (note.time + note.duration);
         const isHighlighted = activeMidiHighlights?.has(highlightKey) && isUnderPlayhead;
@@ -81,6 +96,7 @@ export const PianoRollNotes: React.FC<Props> = ({
               isHighlighted={!!isHighlighted}
               isEditing={!!isEditing}
               isFlashing={!!isFlashing}
+              isImpossible={isImpossible}
               baseColor={getNoteColor(shiftedMidi, mode as 'treble' | 'bass' | 'chord')}
             />
           </div>

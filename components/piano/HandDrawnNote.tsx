@@ -9,11 +9,12 @@ interface Props {
   isHighlighted: boolean;
   isEditing?: boolean;
   isFlashing?: boolean;
+  isImpossible?: boolean;
   baseColor: string;
 }
 
-export const HandDrawnNote: React.FC<Props> = ({ 
-  width, height, label, hasMapping, isHighlighted, isEditing, isFlashing, baseColor 
+export const HandDrawnNote: React.FC<Props> = ({
+  width, height, label, hasMapping, isHighlighted, isEditing, isFlashing, isImpossible, baseColor
 }) => {
   let border = baseColor;
   let fill = baseColor;
@@ -24,6 +25,12 @@ export const HandDrawnNote: React.FC<Props> = ({
     border = '#EC4899'; fill = '#FBCFE8'; text = '#831843'; opacity = 1;
   } else if (isEditing) {
     border = '#BE185D'; fill = '#F472B6'; text = '#FFFFFF'; opacity = 1;
+  } else if (isImpossible) {
+    // Impossible: Greyed out
+    border = '#9CA3AF'; // gray-400
+    fill = '#E5E7EB';   // gray-200
+    text = '#9CA3AF';   // gray-400
+    opacity = 0.4;
   } else if (isHighlighted) {
     // Active: Full Opacity, White Text
     opacity = 1;
@@ -61,7 +68,7 @@ export const HandDrawnNote: React.FC<Props> = ({
       </svg>
       {!hasMapping && !isFlashing && !isEditing && (
         <div className="absolute -top-2 -right-2 bg-white rounded-full p-0.5 shadow-sm z-10">
-          <ExclamationTriangleIcon className="w-3 h-3 text-red-600" />
+          <ExclamationTriangleIcon className={`w-3 h-3 ${isImpossible ? 'text-gray-400' : 'text-red-600'}`} />
         </div>
       )}
     </div>
