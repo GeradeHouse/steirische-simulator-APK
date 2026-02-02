@@ -61,7 +61,7 @@ export const setupMasterChain = (ctx: AudioContext, settings: SoundSettings): Ma
   inputLimiter.connect(masterGain);
   masterGain.connect(ctx.destination);
 
-  return {
+  const chain = {
     preGain,
     inputLimiter,
     tubeDistortion,
@@ -73,6 +73,11 @@ export const setupMasterChain = (ctx: AudioContext, settings: SoundSettings): Ma
     wetGain,
     masterGain
   };
+
+  // Ensure initial node states match settings (e.g., Reverb Mix, Distortion)
+  updateMasterChain(ctx, chain, settings);
+
+  return chain;
 };
 
 export const updateMasterChain = (ctx: AudioContext, chain: MasterChain, settings: SoundSettings) => {

@@ -51,3 +51,5 @@ dist_apk/*
 
 
 generate-folded-project-context/*
+
+android/*

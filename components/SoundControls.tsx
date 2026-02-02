@@ -19,6 +19,7 @@ interface ControlDef {
   tooltip: string;
   unit?: string;
   type?: 'range' | 'toggle';
+  dependency?: keyof SoundSettings;
 }
 
 const CATEGORIES: { name: string; controls: ControlDef[] }[] = [
@@ -50,8 +51,8 @@ const CATEGORIES: { name: string; controls: ControlDef[] }[] = [
   {
     name: "Bellows & Air",
     controls: [
-      { key: "airNoiseLevel", label: "Air Noise", min: 0, max: 0.2, step: 0.001, tooltip: "Hiss of air through valves." },
-      { key: "airTurbulence", label: "Air Turbulence", min: 0, max: 1, step: 0.05, tooltip: "Random fluctuations in air noise." },
+      { key: "airNoiseLevel", label: "Air Noise", min: 0, max: 0.2, step: 0.001, tooltip: "Hiss of air through valves.", dependency: "enableAirNoise" },
+      { key: "airTurbulence", label: "Air Turbulence", min: 0, max: 1, step: 0.05, tooltip: "Random fluctuations in air noise.", dependency: "enableAirNoise" },
       { key: "bellowsShakeSpeed", label: "Shake Speed", min: 0, max: 15, step: 0.5, unit: "Hz", tooltip: "Vibrato speed for bellows shake." },
       { key: "bellowsShakeDepth", label: "Shake Depth", min: 0, max: 1, step: 0.05, tooltip: "Intensity of bellows shake." },
       { key: "dynamicRange", label: "Dynamic Range", min: 0, max: 1, step: 0.05, tooltip: "Volume response to pressure." },
@@ -61,31 +62,31 @@ const CATEGORIES: { name: string; controls: ControlDef[] }[] = [
   {
     name: "Mechanics",
     controls: [
-      { key: "buttonClickVolume", label: "Click Volume", min: 0, max: 1, step: 0.05, tooltip: "Volume of the button press 'clack'." },
-      { key: "palletThudVolume", label: "Thud Volume", min: 0, max: 1, step: 0.05, tooltip: "Volume of the release 'thump'." },
-      { key: "mechanismNoiseRandomness", label: "Mech Randomness", min: 0, max: 1, step: 0.05, tooltip: "Variance in mechanical noises." },
-      { key: "bassButtonClunk", label: "Bass Clunk", min: 0, max: 1, step: 0.05, tooltip: "Heavier noise for bass buttons." },
+      { key: "buttonClickVolume", label: "Click Volume", min: 0, max: 1, step: 0.05, tooltip: "Volume of the button press 'clack'.", dependency: "enableMechanicalNoise" },
+      { key: "palletThudVolume", label: "Thud Volume", min: 0, max: 1, step: 0.05, tooltip: "Volume of the release 'thump'.", dependency: "enableMechanicalNoise" },
+      { key: "mechanismNoiseRandomness", label: "Mech Randomness", min: 0, max: 1, step: 0.05, tooltip: "Variance in mechanical noises.", dependency: "enableMechanicalNoise" },
+      { key: "bassButtonClunk", label: "Bass Clunk", min: 0, max: 1, step: 0.05, tooltip: "Heavier noise for bass buttons.", dependency: "enableMechanicalNoise" },
     ]
   },
   {
     name: "Body & Resonance",
     controls: [
-      { key: "boxResonanceFreq", label: "Box Freq", min: 200, max: 1000, step: 10, unit: "Hz", tooltip: "Wooden body resonant frequency." },
-      { key: "boxResonanceAmount", label: "Box Amount", min: 0, max: 20, step: 0.5, unit: "dB", tooltip: "Intensity of wood resonance." },
+      { key: "boxResonanceFreq", label: "Box Freq", min: 200, max: 1000, step: 10, unit: "Hz", tooltip: "Wooden body resonant frequency.", dependency: "enableBoxResonance" },
+      { key: "boxResonanceAmount", label: "Box Amount", min: 0, max: 20, step: 0.5, unit: "dB", tooltip: "Intensity of wood resonance.", dependency: "enableBoxResonance" },
       { key: "grilleFilterCutoff", label: "Grille Cutoff", min: 1000, max: 10000, step: 100, unit: "Hz", tooltip: "Muffling effect of the grille." },
       { key: "cassottoEffect", label: "Cassotto", min: 0, max: 1, step: 0.05, tooltip: "Tone chamber simulation (nasal/round)." },
-      { key: "bassChamberResonance", label: "Bass Chamber", min: 0, max: 20, step: 0.5, unit: "dB", tooltip: "Resonance of the bass cavity." },
+      { key: "bassChamberResonance", label: "Bass Chamber", min: 0, max: 20, step: 0.5, unit: "dB", tooltip: "Resonance of the bass cavity.", dependency: "enableBoxResonance" },
     ]
   },
   {
     name: "Effects & Environment",
     controls: [
       { key: "inputGain", label: "Input Drive", min: 0, max: 2.0, step: 0.05, tooltip: "Pre-amp gain. Increase to drive distortion." },
-      { key: "tubeSaturation", label: "Saturation", min: 0, max: 100, step: 1, tooltip: "Harmonic distortion/warmth." },
+      { key: "tubeSaturation", label: "Saturation", min: 0, max: 100, step: 1, tooltip: "Harmonic distortion/warmth.", dependency: "enableTubeDistortion" },
       { key: "trebleStereoWidth", label: "Treble Width", min: 0, max: 1, step: 0.05, tooltip: "Stereo panning spread for treble." },
       { key: "bassStereoWidth", label: "Bass Width", min: 0, max: 1, step: 0.05, tooltip: "Stereo panning spread for bass." },
-      { key: "reverbSize", label: "Reverb Size", min: 0.1, max: 5.0, step: 0.1, unit: "s", tooltip: "Room size/decay time." },
-      { key: "reverbMix", label: "Reverb Mix", min: 0, max: 1, step: 0.05, tooltip: "Wet/Dry balance." },
+      { key: "reverbSize", label: "Reverb Size", min: 0.1, max: 5.0, step: 0.1, unit: "s", tooltip: "Room size/decay time.", dependency: "enableReverb" },
+      { key: "reverbMix", label: "Reverb Mix", min: 0, max: 1, step: 0.05, tooltip: "Wet/Dry balance.", dependency: "enableReverb" },
       { key: "eqLow", label: "EQ Low", min: -20, max: 20, step: 1, unit: "dB", tooltip: "Bass frequencies." },
       { key: "eqMid", label: "EQ Mid", min: -20, max: 20, step: 1, unit: "dB", tooltip: "Middle frequencies." },
       { key: "eqHigh", label: "EQ High", min: -20, max: 20, step: 1, unit: "dB", tooltip: "Treble frequencies." },
@@ -133,43 +134,47 @@ export const SoundControls: React.FC<Props> = ({ settings, onUpdate, onReset, on
               {cat.name}
             </h3>
             <div className="space-y-3">
-              {cat.controls.map((ctrl) => (
-                <div key={ctrl.key} className="group relative">
-                  <div className="flex justify-between text-[10px] mb-1 text-gray-600 font-medium items-center">
-                    <div className="flex items-center gap-1 cursor-help">
-                      <span>{ctrl.label}</span>
-                      {/* Tooltip */}
-                      <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block w-48 bg-gray-800 text-white text-[10px] p-2 rounded shadow-lg z-50 pointer-events-none">
-                        {ctrl.tooltip}
+              {cat.controls.map((ctrl) => {
+                const isDisabled = ctrl.dependency ? !settings[ctrl.dependency] : false;
+                return (
+                  <div key={ctrl.key} className={`group relative ${isDisabled ? 'opacity-40 pointer-events-none' : ''}`}>
+                    <div className="flex justify-between text-[10px] mb-1 text-gray-600 font-medium items-center">
+                      <div className="flex items-center gap-1 cursor-help">
+                        <span>{ctrl.label}</span>
+                        {/* Tooltip */}
+                        <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block w-48 bg-gray-800 text-white text-[10px] p-2 rounded shadow-lg z-50 pointer-events-none">
+                          {ctrl.tooltip}
+                        </div>
                       </div>
+                      {ctrl.type !== 'toggle' && <span>{settings[ctrl.key]} {ctrl.unit}</span>}
                     </div>
-                    {ctrl.type !== 'toggle' && <span>{settings[ctrl.key]} {ctrl.unit}</span>}
+                    
+                    {ctrl.type === 'toggle' ? (
+                      <div className="flex items-center h-6">
+                          <button
+                              onClick={() => onUpdate(ctrl.key, !settings[ctrl.key])}
+                              className={`w-8 h-4 rounded-full transition-colors relative ${settings[ctrl.key] ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                          >
+                              <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${settings[ctrl.key] ? 'left-4.5 translate-x-0.5' : 'left-0.5'}`} />
+                          </button>
+                          <span className="ml-2 text-[9px] text-gray-500">{settings[ctrl.key] ? 'On' : 'Off'}</span>
+                      </div>
+                    ) : (
+                      <input
+                          type="range"
+                          min={ctrl.min}
+                          max={ctrl.max}
+                          step={ctrl.step}
+                          value={settings[ctrl.key] as number}
+                          disabled={isDisabled}
+                          onChange={(e) => onUpdate(ctrl.key, parseFloat(e.target.value))}
+                          onDoubleClick={() => onReset(ctrl.key)}
+                          className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-500 hover:accent-indigo-500 transition-colors disabled:cursor-not-allowed"
+                      />
+                    )}
                   </div>
-                  
-                  {ctrl.type === 'toggle' ? (
-                    <div className="flex items-center h-6">
-                        <button
-                            onClick={() => onUpdate(ctrl.key, !settings[ctrl.key])}
-                            className={`w-8 h-4 rounded-full transition-colors relative ${settings[ctrl.key] ? 'bg-indigo-600' : 'bg-gray-300'}`}
-                        >
-                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${settings[ctrl.key] ? 'left-4.5 translate-x-0.5' : 'left-0.5'}`} />
-                        </button>
-                        <span className="ml-2 text-[9px] text-gray-500">{settings[ctrl.key] ? 'On' : 'Off'}</span>
-                    </div>
-                  ) : (
-                    <input
-                        type="range"
-                        min={ctrl.min}
-                        max={ctrl.max}
-                        step={ctrl.step}
-                        value={settings[ctrl.key] as number}
-                        onChange={(e) => onUpdate(ctrl.key, parseFloat(e.target.value))}
-                        onDoubleClick={() => onReset(ctrl.key)}
-                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-500 hover:accent-indigo-500 transition-colors"
-                    />
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

@@ -197,6 +197,7 @@ export const useMidiPlayer = (audioController: any) => {
     activeMidiMapping.current.clear();
     activeScrubbingNotes.current.clear();
     scrubbingNoteCache.current.clear();
+    setAlternativeButtons(new Set());
     audioController.stopAllNotes();
   };
 
@@ -208,6 +209,7 @@ export const useMidiPlayer = (audioController: any) => {
       audioController.stopAllNotes();
     } else {
       setIsPlaying(true);
+      setAlternativeButtons(new Set());
       directionRef.current = audioController.direction;
       startTimeRef.current = performance.now() - (pausedTimeRef.current * 1000 * (originalBpm / bpm));
       
