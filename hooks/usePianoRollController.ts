@@ -55,7 +55,19 @@ export const usePianoRollController = ({
     return () => container.removeEventListener('wheel', onWheel);
   }, []);
 
-  const visibleNotes = useMemo(() => notes.filter(n => (channelModes[n.channel] || 'muted') !== 'hidden'), [notes, channelModes]);
+  const visibleNotes = useMemo(() => {
+    return notes.filter(n => {
+      const mode = channelModes[n.channel] || 'muted';
+      if (mode === 'hidden' || mode === 'muted') return false;
+      
+      // Filter based on autoScrollMode (focus)
+      if (autoScrollMode === 'treble' && mode !== 'treble') return false;
+      if (autoScrollMode === 'bass' && mode !== 'bass') return false;
+      if (autoScrollMode === 'chord' && mode !== 'chord') return false;
+      
+      return true;
+    });
+  }, [notes, channelModes, autoScrollMode]);
 
   const chordLabels = useMemo(() => {
     const getLabels = (subset: MidiNote[]) => {

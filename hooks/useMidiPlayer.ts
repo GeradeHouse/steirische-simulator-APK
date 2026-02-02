@@ -50,6 +50,7 @@ export const useMidiPlayer = (audioController: any) => {
   const activeMidiMapping = useRef<Map<string, ActiveMidiMapping>>(new Map());
   const octaveShiftRef = useRef(0);
   const semitoneShiftRef = useRef(0);
+  const playbackStartMarkerRef = useRef(0);
   const activeScrubbingNotes = useRef<Set<string>>(new Set());
   const scrubbingNoteCache = useRef<Map<string, string>>(new Map());
 
@@ -161,34 +162,38 @@ export const useMidiPlayer = (audioController: any) => {
     setAvailableChannels(parsed.availableChannels);
     setChannelModes(parsed.initialChannelModes);
     eventQueue.current = parsed.eventQueue;
-    resetPlayer();
-
-    if (parsed.allNotes.length > 0) {
-      const firstNoteTime = parsed.allNotes[0].time;
-      const newTime = Math.max(0, firstNoteTime - 1.0);
-      setCurrentTime(newTime);
-      pausedTimeRef.current = newTime;
-    }
-  };
-
-  const resetPlayer = () => {
-    setIsPlaying(false);
+    
+    // Calculate Project Start Time (1 bar before first note)
     let startTime = 0;
-    const visibleNotes = allNotes.filter(n => {
-        const mode = channelModes[n.channel] || 'muted';
+    const visibleNotes = parsed.allNotes.filter((n: MidiNote) => {
+        const mode = parsed.initialChannelModes[n.channel] || 'muted';
         return mode !== 'muted' && mode !== 'hidden';
     });
-    if (visibleNotes.length > 0) startTime = Math.max(0, visibleNotes[0].time - 1.0);
+    
+    if (visibleNotes.length > 0) {
+        const secondsPerBar = (60 / parsed.bpm) * 4;
+        startTime = Math.max(0, visibleNotes[0].time - secondsPerBar);
+    }
 
+    // Initialize State
     setCurrentTime(startTime);
     pausedTimeRef.current = startTime;
+    playbackStartMarkerRef.current = startTime;
     
-    const newIndex = eventQueue.current.findIndex(e => e.time >= startTime);
+    // Reset internal player state without overriding the time we just set
+    resetPlayerStateOnly(startTime, parsed.directionEvents);
+  };
+
+  // Helper to reset internal state without changing time logic (extracted from old resetPlayer)
+  const resetPlayerStateOnly = (targetTime: number, dirs: DirectionEvent[]) => {
+    setIsPlaying(false);
+    
+    const newIndex = eventQueue.current.findIndex(e => e.time >= targetTime);
     eventIndex.current = newIndex === -1 ? eventQueue.current.length : newIndex;
     
     let dir = Direction.PUSH;
-    for (const event of directionEvents) {
-      if (event.time <= startTime + 0.001) dir = event.direction;
+    for (const event of dirs) {
+      if (event.time <= targetTime + 0.001) dir = event.direction;
       else break;
     }
     directionRef.current = dir;
@@ -201,6 +206,41 @@ export const useMidiPlayer = (audioController: any) => {
     audioController.stopAllNotes();
   };
 
+  const resetPlayer = () => {
+    // Calculate Project Start Time (1 bar before first note)
+    let projectStartTime = 0;
+    const visibleNotes = allNotes.filter(n => {
+        const mode = channelModes[n.channel] || 'muted';
+        return mode !== 'muted' && mode !== 'hidden';
+    });
+    if (visibleNotes.length > 0) {
+        const secondsPerBar = (60 / bpm) * 4;
+        projectStartTime = Math.max(0, visibleNotes[0].time - secondsPerBar);
+    }
+
+    let targetTime = playbackStartMarkerRef.current;
+
+    if (isPlaying) {
+        // Case 1: Playing -> Stop. Go to last start marker.
+        setIsPlaying(false);
+        // targetTime is already playbackStartMarkerRef.current
+    } else {
+        // Case 2: Already Stopped.
+        if (Math.abs(currentTime - playbackStartMarkerRef.current) < 0.05) {
+            // We are at the marker -> Go to Project Start
+            targetTime = projectStartTime;
+            playbackStartMarkerRef.current = projectStartTime;
+        } else {
+            // We are scrubbed away -> Go back to marker
+            // targetTime is already playbackStartMarkerRef.current
+        }
+    }
+
+    setCurrentTime(targetTime);
+    pausedTimeRef.current = targetTime;
+    resetPlayerStateOnly(targetTime, directionEvents);
+  };
+
   const togglePlay = () => {
     if (isPlaying) {
       setIsPlaying(false);
@@ -210,6 +250,7 @@ export const useMidiPlayer = (audioController: any) => {
     } else {
       setIsPlaying(true);
       setAlternativeButtons(new Set());
+      playbackStartMarkerRef.current = currentTime; // Record start position
       directionRef.current = audioController.direction;
       startTimeRef.current = performance.now() - (pausedTimeRef.current * 1000 * (originalBpm / bpm));
       
