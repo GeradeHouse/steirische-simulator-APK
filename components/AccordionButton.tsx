@@ -21,6 +21,7 @@ interface Props {
   onStop: () => void;
   onDragStart: (e: React.MouseEvent | React.TouchEvent) => void;
   style?: React.CSSProperties;
+  layoutSettings?: { activeFontSize: number; inactiveFontSize: number; labelVerticalOffset: number };
 }
 
 // Helper to separate "C#3 (des)" into { midi: "C#3", german: "des" }
@@ -52,7 +53,8 @@ const AccordionButtonBase: React.FC<Props> = ({
   onPlay,
   onStop,
   onDragStart,
-  style
+  style,
+  layoutSettings
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -78,17 +80,13 @@ const AccordionButtonBase: React.FC<Props> = ({
   const markedClass = (!isEditing && isMarked) ? 'ring-2 ring-red-400/50 ring-offset-1 ring-offset-transparent' : '';
 
   // --- Contrast System: Backgrounds ---
-  const activeBeige = isGleichton ? '#E5DDBA' : '#F8FAEB';
-  const bgPush = direction === Direction.PUSH ? activeBeige : '#FFFFFF';
-  const bgPull = direction === Direction.PULL ? activeBeige : '#FFFFFF';
+  const bgPush = '#F8F9EB';
+  const bgPull = '#E6DBB7';
 
   // --- Contrast System: Typography ---
   const getTextClass = (isHalfActive: boolean) => {
-    const base = "w-full h-full flex justify-center items-center leading-tight transition-all duration-200 ";
-    if (isHalfActive) {
-        return base + (isBass ? "text-[0.5rem] font-bold" : "text-[0.55rem] font-bold");
-    }
-    return base + (isBass ? "text-[0.35rem] font-normal text-gray-300" : "text-[0.4rem] font-normal text-gray-300");
+    const base = "w-full h-full flex justify-center items-center leading-tight transition-all duration-200 text-black ";
+    return base + (isHalfActive ? "font-bold" : "font-normal");
   };
 
   // --- Pitch-Based Fills (Background Only) ---
@@ -194,13 +192,10 @@ const AccordionButtonBase: React.FC<Props> = ({
 
   const getTargetFromEvent = (clientY: number) => {
     if (!containerRef.current) return null;
-    const rect = containerRef.current.getBoundingClientRect();
-    const relativeY = clientY - rect.top;
-    const isTop = relativeY < (rect.height / 2);
     
     return {
-      dir: isTop ? Direction.PUSH : Direction.PULL,
-      note: isTop ? pushNote : pullNote
+      dir: direction,
+      note: direction === Direction.PUSH ? pushNote : pullNote
     };
   };
 
@@ -286,7 +281,13 @@ const AccordionButtonBase: React.FC<Props> = ({
           className="flex-1 w-full relative rounded-t-full pointer-events-none border-b border-[#d1cbb8] transition-colors duration-200"
           style={{ backgroundColor: bgPush, ...pushFillStyle }}
         >
-          <div className={`${getTextClass(direction === Direction.PUSH)} items-end translate-y-[3px] text-black`}>
+          <div
+            className={`${getTextClass(direction === Direction.PUSH)} items-end text-black`}
+            style={{
+              transform: `translateY(${layoutSettings?.labelVerticalOffset ?? 2}px)`,
+              fontSize: `${(direction === Direction.PUSH) ? (layoutSettings?.activeFontSize ?? 0.6) : (layoutSettings?.inactiveFontSize ?? 0.3)}rem`
+            }}
+          >
             {pushData.midi}
           </div>
         </div>
@@ -296,7 +297,12 @@ const AccordionButtonBase: React.FC<Props> = ({
           className="flex-1 w-full relative rounded-b-full pointer-events-none transition-colors duration-200"
           style={{ backgroundColor: bgPull, ...pullFillStyle }}
         >
-          <div className={`${getTextClass(direction === Direction.PULL)} items-start pt-[1px] text-black`}>
+          <div
+            className={`${getTextClass(direction === Direction.PULL)} items-start pt-[1px] text-black`}
+            style={{
+              fontSize: `${(direction === Direction.PULL) ? (layoutSettings?.activeFontSize ?? 0.6) : (layoutSettings?.inactiveFontSize ?? 0.3)}rem`
+            }}
+          >
             {pullData.midi}
           </div>
         </div>

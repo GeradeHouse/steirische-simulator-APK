@@ -13,14 +13,16 @@ interface Props {
   directionEvents: DirectionEvent[];
   autoScrollMode?: 'treble' | 'bass' | 'chord' | 'off';
   isNoteSnapEnabled?: boolean;
+  defaultNoteHeight?: number;
+  defaultPxPerSec?: number;
   onSeek: (time: number) => void;
 }
 
 export const usePianoRollController = ({
-  notes, currentTime, isPlaying, channelModes, octaveShift, semitoneShift, directionEvents, autoScrollMode, isNoteSnapEnabled, onSeek
+  notes, currentTime, isPlaying, channelModes, octaveShift, semitoneShift, directionEvents, autoScrollMode, isNoteSnapEnabled, defaultNoteHeight = 26, defaultPxPerSec = 150, onSeek
 }: Props) => {
-  const [pxPerSec, setPxPerSec] = useState(150);
-  const [noteHeight, setNoteHeight] = useState(26);
+  const [pxPerSec, setPxPerSec] = useState(defaultPxPerSec);
+  const [noteHeight, setNoteHeight] = useState(defaultNoteHeight);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedTimes, setSelectedTimes] = useState<Set<number>>(new Set());
 

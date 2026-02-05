@@ -1,6 +1,6 @@
 import React from 'react';
 import { Capacitor } from '@capacitor/core';
-import { Direction, NoteDefinition, LayoutMap } from '../types';
+import { Direction, NoteDefinition, LayoutMap, LayoutSettings } from '../types';
 import { TREBLE_ROWS, BASS_ROWS } from '../constants';
 import { AccordionButton } from './AccordionButton';
 import { PianoRoll } from './PianoRoll';
@@ -55,6 +55,7 @@ interface MainStageProps {
     isNoteSnapEnabled?: boolean;
     focusMode?: 'treble' | 'bass' | 'chord' | 'off';
   };
+  layoutSettings: LayoutSettings;
 }
 
 export const MainStage: React.FC<MainStageProps> = ({
@@ -70,7 +71,8 @@ export const MainStage: React.FC<MainStageProps> = ({
   handleNoteStop,
   handleBgDoubleClick,
   showTooltips,
-  midiData
+  midiData,
+  layoutSettings
 }) => {
   
   const isAndroid = Capacitor.getPlatform() === 'android';
@@ -160,6 +162,7 @@ export const MainStage: React.FC<MainStageProps> = ({
         onDragStart={(e) => handleDragStart(e, id)}
         onPlay={(note, dir) => handleNoteStart(id, note, type, chordType, dir)}
         onStop={() => handleNoteStop(id)}
+        layoutSettings={layoutSettings}
       />
     );
   };
@@ -229,6 +232,7 @@ export const MainStage: React.FC<MainStageProps> = ({
                   autoScrollMode={midiData.autoScrollMode}
                   isNoteSnapEnabled={midiData.isNoteSnapEnabled}
                   focusMode={midiData.focusMode}
+                  layoutSettings={layoutSettings}
                 />
             </div>
           )}

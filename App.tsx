@@ -3,9 +3,11 @@ import { MainStage } from './components/MainStage';
 import { SoundControls } from './components/SoundControls';
 import { MidiControls } from './components/MidiControls';
 import { ProjectLibrary } from './components/ProjectLibrary';
+import { LayoutSettings } from './components/LayoutSettings';
 import { Bars3Icon, XMarkIcon } from '@heroicons/react/24/outline';
 
 import { useSoundSettings } from './hooks/useSoundSettings';
+import { useLayoutSettings } from './hooks/useLayoutSettings';
 import { useLayoutEditor } from './hooks/useLayoutEditor';
 import { useAudioController } from './hooks/useAudioController';
 import { useBackgroundImage } from './hooks/useBackgroundImage';
@@ -19,7 +21,7 @@ export default function App() {
 
   // --- UI State ---
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeOverlay, setActiveOverlay] = useState<'sound' | 'projects' | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<'sound' | 'projects' | 'layout' | null>(null);
   const [showTooltips, setShowTooltips] = useState(false);
 
   const {
@@ -42,6 +44,12 @@ export default function App() {
     handleImportLayout,
     handleExportLayout
   } = useLayoutEditor(containerRef);
+
+  const {
+    layoutSettings,
+    updateLayoutSetting,
+    resetLayoutSettings
+  } = useLayoutSettings();
 
   const audioController = useAudioController(isEditing);
   const {
@@ -170,6 +178,7 @@ export default function App() {
           handleNoteStop={handleNoteStop}
           handleBgDoubleClick={handleBgDoubleClick}
           showTooltips={showTooltips}
+          layoutSettings={layoutSettings}
           midiData={{
             notes: midiPlayer.allNotes,
             currentTime: midiPlayer.currentTime,
@@ -217,6 +226,10 @@ export default function App() {
             <div className="p-4 space-y-3">
               <button onClick={() => { setActiveOverlay('sound'); setIsMenuOpen(false); }} className="w-full p-4 bg-indigo-50 text-indigo-900 rounded-xl font-bold text-left hover:bg-indigo-100 transition-colors">
                 🎛️ Sound Settings
+              </button>
+              
+              <button onClick={() => { setActiveOverlay('layout'); setIsMenuOpen(false); }} className="w-full p-4 bg-amber-50 text-amber-900 rounded-xl font-bold text-left hover:bg-amber-100 transition-colors">
+                🎨 Layout Settings
               </button>
               
               <button onClick={() => { setActiveOverlay('projects'); setIsMenuOpen(false); }} className="w-full p-4 bg-emerald-50 text-emerald-900 rounded-xl font-bold text-left hover:bg-emerald-100 transition-colors">
@@ -271,7 +284,7 @@ export default function App() {
         <div className="absolute inset-0 z-[55] bg-white flex flex-col animate-in slide-in-from-bottom duration-300">
           <div className="flex items-center justify-between p-3 border-b bg-gray-50 shadow-sm flex-none">
             <h3 className="font-bold text-lg text-gray-800 pl-2">
-              {activeOverlay === 'sound' ? 'Sound Module' : 'MIDI Projects'}
+              {activeOverlay === 'sound' ? 'Sound Module' : activeOverlay === 'layout' ? 'Layout Settings' : 'MIDI Projects'}
             </h3>
             <button
               onClick={() => setActiveOverlay(null)}
@@ -287,6 +300,13 @@ export default function App() {
                 onUpdate={updateSetting}
                 onReset={resetSetting}
                 onResetAll={resetAllSettings}
+              />
+            ) : activeOverlay === 'layout' ? (
+              <LayoutSettings
+                settings={layoutSettings}
+                onUpdate={updateLayoutSetting}
+                onReset={resetLayoutSettings}
+                onClose={() => setActiveOverlay(null)}
               />
             ) : (
               <div className="h-full p-4 overflow-y-auto">

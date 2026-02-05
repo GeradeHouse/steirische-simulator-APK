@@ -1,5 +1,5 @@
 // file: helpers/appConfig.ts
-import { SoundSettings } from '../types';
+import { SoundSettings, LayoutSettings } from '../types';
 
 export const STORAGE_KEY_LAYOUT = 'steirische_layout_v1';
 export const STORAGE_KEY_SOUND = 'steirische_sound_v1';
@@ -35,3 +35,13 @@ export const DEFAULT_SOUND_SETTINGS: SoundSettings = {
 // Layout Split Constants (Percentages of original image width)
 export const SPLIT_LEFT_LIMIT = 21.5; // Bass section ends at 21.5%
 export const SPLIT_RIGHT_START = 76.0; // Treble section starts at 76.0%
+
+export const STORAGE_KEY_LAYOUT_SETTINGS = 'steirische_layout_settings_v1';
+
+export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
+  defaultNoteHeight: 26,
+  defaultPxPerSec: 150,
+  activeFontSize: 0.6,
+  inactiveFontSize: 0.3,
+  labelVerticalOffset: 2
+};

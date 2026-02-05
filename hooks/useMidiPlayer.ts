@@ -438,7 +438,7 @@ export const useMidiPlayer = (audioController: any) => {
     setFingeringOverrides(newOverrides);
     fingeringOverridesRef.current = newOverrides;
     setFlashingNotes(newFlashing);
-    if (!isPlaying) setTimeout(() => seek(currentTime), 0);
+    if (!isPlaying) seek(currentTime);
   };
 
   const selectNote = (note: MidiNote) => {

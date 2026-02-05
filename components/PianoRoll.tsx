@@ -1,7 +1,7 @@
 // file: components/PianoRoll.tsx
 import React, { useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import { MidiNote, DirectionEvent, ChannelMode } from '../hooks/midi/types';
-import { Direction } from '../types';
+import { Direction, LayoutSettings } from '../types';
 import { PianoKeys, PianoGrid, ChordLabels, ArrowLayer } from './piano/PianoRollVisuals';
 import { PianoRollNotes } from './piano/PianoRollNotes';
 import { usePianoRollController } from '../hooks/usePianoRollController';
@@ -26,12 +26,14 @@ interface Props {
   autoScrollMode?: 'treble' | 'bass' | 'chord' | 'off';
   isNoteSnapEnabled?: boolean;
   focusMode?: 'treble' | 'bass' | 'chord' | 'off';
+  layoutSettings: LayoutSettings;
 }
 
 export const PianoRoll: React.FC<Props> = ({
   notes, currentTime, isPlaying, channelModes, direction, onSeek, octaveShift, semitoneShift,
   directionEvents = [], onUpdateDirections, activeMidiHighlights, onNotePreview, editingNote,
-  onSelectNote, onClearSelection, flashingNotes, autoScrollMode, isNoteSnapEnabled, focusMode = 'off'
+  onSelectNote, onClearSelection, flashingNotes, autoScrollMode, isNoteSnapEnabled, focusMode = 'off',
+  layoutSettings
 }) => {
   
   const {
@@ -40,8 +42,25 @@ export const PianoRoll: React.FC<Props> = ({
     visibleNotes, chordLabels, arrowGroups, MIN_MIDI, MAX_MIDI, TOTAL_HEIGHT,
     debugInfo, setDebugInfo
   } = usePianoRollController({
-    notes, currentTime, isPlaying, channelModes, octaveShift, semitoneShift, directionEvents, autoScrollMode, isNoteSnapEnabled, onSeek
+    notes, currentTime, isPlaying, channelModes, octaveShift, semitoneShift, directionEvents, autoScrollMode, isNoteSnapEnabled, onSeek,
+    defaultNoteHeight: layoutSettings.defaultNoteHeight,
+    defaultPxPerSec: layoutSettings.defaultPxPerSec
   });
+
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const [clientHeight, setClientHeight] = React.useState(0);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+      setScrollTop(e.currentTarget.scrollTop);
+      setClientHeight(e.currentTarget.clientHeight);
+  };
+
+  // Initialize clientHeight on mount
+  useEffect(() => {
+      if (scrollContainerRef.current) {
+          setClientHeight(scrollContainerRef.current.clientHeight);
+      }
+  }, []);
 
   const gestureRef = useRef<HTMLDivElement>(null);
   const currentTimeRef = useRef(currentTime);
@@ -314,7 +333,7 @@ export const PianoRoll: React.FC<Props> = ({
   };
 
   return (
-    <div ref={scrollContainerRef} className="w-full h-full overflow-y-auto overflow-x-hidden bg-white border-2 border-gray-300 rounded-lg shadow-inner select-none relative">
+    <div ref={scrollContainerRef} onScroll={handleScroll} className="w-full h-full overflow-y-auto overflow-x-hidden bg-white border-2 border-gray-300 rounded-lg shadow-inner select-none relative">
       <div className="relative" style={{ height: TOTAL_HEIGHT }}>
         <PianoKeys rows={rows} noteHeight={noteHeight} getNoteLabel={getNoteLabel} isBlackKey={isBlackKey} />
         
@@ -355,6 +374,9 @@ export const PianoRoll: React.FC<Props> = ({
                 focusMode={focusMode}
               />
               <ArrowLayer
+                visibleNotes={renderedNotes}
+                scrollTop={scrollTop}
+                clientHeight={clientHeight}
                 groups={renderedArrows}
                 pxPerSec={pxPerSec}
                 noteHeight={noteHeight}

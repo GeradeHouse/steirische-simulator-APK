@@ -82,6 +82,14 @@ export interface SoundSettings {
   enableBoxResonance: boolean;
 }
 
+export interface LayoutSettings {
+  defaultNoteHeight: number;
+  defaultPxPerSec: number;
+  activeFontSize: number;
+  inactiveFontSize: number;
+  labelVerticalOffset: number;
+}
+
 export interface SavedDirectionEvent {
   time: number;
   direction: Direction;
