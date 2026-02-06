@@ -61,8 +61,10 @@ const AccordionButtonBase: React.FC<Props> = ({
   const isInteractionRef = useRef(false);
 
   const handleStop = () => {
-    isInteractionRef.current = false;
-    onStop();
+    if (isInteractionRef.current) {
+      isInteractionRef.current = false;
+      onStop();
+    }
   };
 
   const pushData = parseLabel(pushNote.label);
@@ -246,6 +248,12 @@ const AccordionButtonBase: React.FC<Props> = ({
   const handleTouchStart = (e: React.TouchEvent) => {
     if (isEditing) {
       onDragStart(e);
+      return;
+    }
+    if (isAlternative && onAlternativeClick) {
+      e.preventDefault();
+      e.stopPropagation();
+      onAlternativeClick();
       return;
     }
     e.preventDefault();
