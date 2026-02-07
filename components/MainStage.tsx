@@ -79,6 +79,28 @@ export const MainStage: React.FC<MainStageProps> = ({
   const TREBLE_BTN_SIZE = isAndroid ? 6.5 : 3.4;
   const BASS_BTN_SIZE = isAndroid ? 6.5 : 4.3;
 
+  // INSERT immediately after `const BASS_BTN_SIZE = ...;`
+  const accDbgEnabled = () => {
+    const g = globalThis as any;
+    if (typeof g.__ACC_DEBUG_FINGERING__ === 'boolean') return g.__ACC_DEBUG_FINGERING__;
+
+    const enabled = Capacitor.getPlatform() !== 'web';
+    g.__ACC_DEBUG_FINGERING__ = enabled;
+    return enabled;
+  };
+
+  const dbg = (...args: any[]) => {
+    if (!accDbgEnabled()) return;
+    // eslint-disable-next-line no-console
+    console.log('[acc-debug]', ...args);
+  };
+
+  const highlightStateRef = React.useRef<Map<string, string>>(new Map());
+
+  React.useEffect(() => {
+    dbg('boot:MainStage', { platform: Capacitor.getPlatform() });
+  }, []);
+
   // Adjust split start for Android (wider image: ~31.7% width vs 24%)
   const effectiveSplitRightStart = isAndroid ? 68.3 : SPLIT_RIGHT_START;
 
@@ -131,6 +153,22 @@ export const MainStage: React.FC<MainStageProps> = ({
     const isActive = activeNotes.has(id);
     const isSelected = id === selectedButtonId;
     const isAlternative = midiData?.alternativeButtons?.has(id);
+    // INSERT immediately after `const isAlternative = midiData?.alternativeButtons?.has(id);`
+    const prev = highlightStateRef.current.get(id) || '00';
+    const curr = `${isActive ? 1 : 0}${isAlternative ? 1 : 0}`;
+
+    if (prev !== curr && (prev !== '00' || curr !== '00')) {
+      dbg('uiHighlightChange', {
+        id,
+        isActive,
+        isAlternative,
+        currentTime: midiData?.currentTime ?? null,
+        isPlaying: midiData?.isPlaying ?? null,
+        editingNote: midiData?.editingNote ?? null
+      });
+    }
+
+    if (prev !== curr) highlightStateRef.current.set(id, curr);
     const size = type === 'treble' ? TREBLE_BTN_SIZE : BASS_BTN_SIZE;
     
     // Determine Panel

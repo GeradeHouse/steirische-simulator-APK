@@ -1,5 +1,6 @@
 // file: hooks/useMidiPlayer.ts
 import { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Direction, MidiProject } from '../types';
 import { getButtonIdsForNote, getNoteKey } from '../helpers/midiMap';
 import { BASS_ROWS } from '../constants';
@@ -9,6 +10,31 @@ import { solveAndPlayBatch } from './midi/utils/solver';
 import { syncScrubbingNotes } from './midi/utils/scrubber';
 
 export type { MidiNote, ChannelMode, DirectionEvent };
+
+// Debug logging (auto-enabled on native unless explicitly disabled)
+let __accDbgBootLogged = false;
+
+const accDbgEnabled = () => {
+  const g = globalThis as any;
+  if (typeof g.__ACC_DEBUG_FINGERING__ === 'boolean') return g.__ACC_DEBUG_FINGERING__;
+
+  const enabled = Capacitor.getPlatform() !== 'web';
+  g.__ACC_DEBUG_FINGERING__ = enabled;
+
+  if (enabled && !__accDbgBootLogged) {
+    __accDbgBootLogged = true;
+    // eslint-disable-next-line no-console
+    console.warn('[acc-debug] enabled (default)', { platform: Capacitor.getPlatform() });
+  }
+
+  return enabled;
+};
+
+const dbg = (...args: any[]) => {
+  if (!accDbgEnabled()) return;
+  // eslint-disable-next-line no-console
+  console.log('[acc-debug]', ...args);
+};
 
 export const useMidiPlayer = (audioController: any) => {
   // --- State ---
@@ -61,6 +87,11 @@ export const useMidiPlayer = (audioController: any) => {
       return () => clearTimeout(timer);
     }
   }, [flashingNotes]);
+
+  // INSERT after the flashing-notes timer `useEffect(...)` block
+  useEffect(() => {
+    dbg('boot:useMidiPlayer', { platform: Capacitor.getPlatform() });
+  }, []);
 
   // --- Actions ---
 
@@ -364,6 +395,45 @@ export const useMidiPlayer = (audioController: any) => {
     }
   };
 
+  // REPLACE the entire `syncScrubbingAtTime` function with this version:
+  const syncScrubbingAtTime = (time: number) => {
+    dbg('syncScrub:start', {
+      time,
+      isPlaying,
+      currentTime,
+      pausedTime: pausedTimeRef.current,
+      cacheSize: scrubbingNoteCache.current.size,
+      activeScrubSize: activeScrubbingNotes.current.size
+    });
+
+    const alts = syncScrubbingNotes({
+      time,
+      allNotes,
+      directionEvents,
+      channelModes,
+      octaveShift: octaveShiftRef.current,
+      semitoneShift: semitoneShiftRef.current,
+      fingeringOverrides: fingeringOverridesRef.current,
+      activeScrubbingNotes: activeScrubbingNotes.current,
+      scrubbingNoteCache: scrubbingNoteCache.current,
+      audioController,
+      isScrubbingSoundEnabled,
+      currentDirection: directionRef.current,
+      setDirection: (d) => { directionRef.current = d; audioController.setDirection(d); }
+    });
+
+    dbg('syncScrub:result', {
+      time,
+      altsSize: alts.size,
+      altsSample: Array.from(alts).slice(0, 12),
+      cacheSize: scrubbingNoteCache.current.size,
+      activeScrubSize: activeScrubbingNotes.current.size
+    });
+
+    setAlternativeButtons(alts);
+    return alts;
+  };
+
   const seek = (time: number) => {
     const newTime = Math.max(0, Math.min(time, totalTime));
     setCurrentTime(newTime);
@@ -378,28 +448,31 @@ export const useMidiPlayer = (audioController: any) => {
       const speedRatio = bpm / originalBpm;
       startTimeRef.current = performance.now() - (newTime * 1000 / speedRatio);
     } else {
-      pausedTimeRef.current = newTime;
-      const alts = syncScrubbingNotes({
-        time: newTime,
-        allNotes,
-        directionEvents,
-        channelModes,
-        octaveShift: octaveShiftRef.current,
-        semitoneShift: semitoneShiftRef.current,
-        fingeringOverrides: fingeringOverridesRef.current,
-        activeScrubbingNotes: activeScrubbingNotes.current,
-        scrubbingNoteCache: scrubbingNoteCache.current,
-        audioController,
-        isScrubbingSoundEnabled,
-        currentDirection: directionRef.current,
-        setDirection: (d) => { directionRef.current = d; audioController.setDirection(d); }
+      // INSERT inside the paused (`else`) branch, immediately before `syncScrubbingAtTime(newTime);`
+      dbg('seek:paused', {
+        newTime,
+        prevCurrentTime: currentTime,
+        pausedTimePrev: pausedTimeRef.current
       });
-      setAlternativeButtons(alts);
+      pausedTimeRef.current = newTime;
+      syncScrubbingAtTime(newTime);
     }
   };
 
   const setFingeringOverride = (midi: number, time: number, channel: number, btnId: string) => {
+    // INSERT immediately after `const targetKey = getNoteKey(midi, time, channel);`
     const targetKey = getNoteKey(midi, time, channel);
+    dbg('override:start', {
+      midi,
+      time,
+      channel,
+      btnId,
+      targetKey,
+      isPlaying,
+      currentTime,
+      pausedTime: pausedTimeRef.current,
+      cachePrev: scrubbingNoteCache.current.get(targetKey) ?? null
+    });
     const newOverrides = { ...fingeringOverrides };
     const newFlashing = new Set<string>();
     
@@ -438,7 +511,40 @@ export const useMidiPlayer = (audioController: any) => {
     setFingeringOverrides(newOverrides);
     fingeringOverridesRef.current = newOverrides;
     setFlashingNotes(newFlashing);
-    if (!isPlaying) seek(currentTime);
+
+    if (!isPlaying) {
+      // Refresh scrubbing highlights without mutating `currentTime`.
+      // Invalidate scrub cache for the overridden note so the newly-selected button
+      // becomes the active/main highlight immediately.
+      // INSERT inside `if (!isPlaying) { ... }` immediately after `const cachedBtnId = ...`
+      const cachedBtnId = scrubbingNoteCache.current.get(targetKey);
+      dbg('override:cacheInvalidate', {
+        targetKey,
+        cachedBtnId: cachedBtnId ?? null,
+        nextBtnId: btnId,
+        cachedWasActiveScrub: cachedBtnId ? activeScrubbingNotes.current.has(cachedBtnId) : false
+      });
+      if (cachedBtnId && cachedBtnId !== btnId) {
+        activeScrubbingNotes.current.delete(cachedBtnId);
+        audioController.handleNoteStop(cachedBtnId);
+      }
+      scrubbingNoteCache.current.delete(targetKey);
+
+      // RE_topics: replace the final `syncScrubbingAtTime(...)` call to capture its return and log.
+      // Find the existing line:
+      //   syncScrubbingAtTime(pausedTimeRef.current);
+
+      // REPLACE that single line with:
+      const alts = syncScrubbingAtTime(pausedTimeRef.current);
+
+      dbg('override:afterSync', {
+        targetKey,
+        cacheNow: scrubbingNoteCache.current.get(targetKey) ?? null,
+        altsHasBtnId: alts.has(btnId),
+        altsSize: alts.size,
+        activeScrubSize: activeScrubbingNotes.current.size
+      });
+    }
   };
 
   const selectNote = (note: MidiNote) => {
@@ -521,7 +627,9 @@ export const useMidiPlayer = (audioController: any) => {
     isPlaying, currentTime, totalTime, bpm, setBpm, fileName, loadMidiFile, togglePlay, resetPlayer,
     availableChannels, channelModes, cycleChannelMode, allNotes, seek, octaveShift, setOctaveShift,
     semitoneShift, setSemitoneShift, directionEvents, updateDirections, isScrubbingSoundEnabled,
-    setIsScrubbingSoundEnabled, currentProjectId, loadProject, getProjectState, alternativeButtons,
+    setIsScrubbingSoundEnabled, currentProjectId, loadProject, getProjectState,
+    fingeringOverrides,
+    alternativeButtons,
     setFingeringOverride, editingNote, selectNote, clearSelection: () => setEditingNote(null),
     flashingNotes, deleteChannel, autoScrollMode, cycleAutoScrollMode, isNoteSnapEnabled,
     setIsNoteSnapEnabled, isAutoSaveEnabled, setIsAutoSaveEnabled

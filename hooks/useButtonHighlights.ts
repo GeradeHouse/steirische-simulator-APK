@@ -1,7 +1,33 @@
 import { useMemo } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { Direction, NoteDefinition } from '../types';
 import { BASS_ROWS, TREBLE_ROWS } from '../constants';
 import { getButtonIdsForNote } from '../helpers/midiMap';
+
+// Debug logging (auto-enabled on native unless explicitly disabled)
+let __accDbgBootLogged = false;
+
+const accDbgEnabled = () => {
+  const g = globalThis as any;
+  if (typeof g.__ACC_DEBUG_FINGERING__ === 'boolean') return g.__ACC_DEBUG_FINGERING__;
+
+  const enabled = Capacitor.getPlatform() !== 'web';
+  g.__ACC_DEBUG_FINGERING__ = enabled;
+
+  if (enabled && !__accDbgBootLogged) {
+    __accDbgBootLogged = true;
+    // eslint-disable-next-line no-console
+    console.warn('[acc-debug] enabled (default)', { platform: Capacitor.getPlatform() });
+  }
+
+  return enabled;
+};
+
+const dbg = (...args: any[]) => {
+  if (!accDbgEnabled()) return;
+  // eslint-disable-next-line no-console
+  console.log('[acc-debug]', ...args);
+};
 
 interface MidiDataSubset {
   notes: any[];
@@ -27,6 +53,9 @@ export const useButtonHighlights = ({
   handleNoteStart,
   handleNoteStop
 }: UseButtonHighlightsProps) => {
+
+  accDbgEnabled();
+  dbg('boot:useButtonHighlights', { platform: Capacitor.getPlatform() });
 
   // Helper to lookup button definition
   const getButtonDef = (id: string) => {
@@ -55,6 +84,14 @@ export const useButtonHighlights = ({
   // 2. Handle Piano Roll Note Preview
   const handlePianoRollPreview = (midi: number, dir: Direction, start: boolean) => {
     const btnIds = getButtonIdsForNote(midi, dir);
+    // INSERT immediately after `const btnIds = getButtonIdsForNote(midi, dir);`
+    dbg('pianoRollPreview', {
+      start,
+      midi,
+      dir,
+      currentTime: midiData?.currentTime ?? null,
+      candidateBtnIds: btnIds
+    });
     btnIds.forEach(id => {
       if (start) {
         const def = getButtonDef(id);
@@ -79,25 +116,53 @@ export const useButtonHighlights = ({
     
     const noteDef = direction === Direction.PUSH ? def.push : def.pull;
 
-    const currentMidiNote = midiData.notes.find(n => {
-        const start = n.time;
-        const end = n.time + n.duration;
-        const t = midiData.currentTime;
-        
-        // Check time overlap
-        if (t < start || t >= end) return false;
-
-        // Check visibility (channel mode)
-        const mode = midiData.channelModes[n.channel] || 'muted';
-        if (mode === 'muted' || mode === 'hidden') return false;
-
-        // Check pitch match (including semitone shift)
-        const shifted = n.midi + (midiData.octaveShift * 12) + midiData.semitoneShift;
-        return shifted === noteDef.midi;
+    // INSERT immediately after `const t = midiData.currentTime;`
+    const t = midiData.currentTime;
+    dbg('altClick:start', {
+      btnId: id,
+      direction,
+      targetShiftedMidi: noteDef.midi,
+      currentTime: t
     });
 
-    if (currentMidiNote) {
-        midiData.onFingeringOverride(currentMidiNote.midi, currentMidiNote.time, currentMidiNote.channel, id);
+    let best: any | null = null;
+
+    // Prefer the most recent note instance that overlaps the current time.
+    // This avoids selecting an earlier overlapping note when multiple same-pitch
+    // notes overlap (legato/quantized durations or unsorted note arrays).
+    // Replace the existing loop body by adding `matches` counting and an end log.
+    let matches = 0;
+
+    for (const n of midiData.notes) {
+      const start = n.time;
+      const end = n.time + n.duration;
+
+      // Check time overlap
+      if (t < start || t >= end) continue;
+
+      // Check visibility (channel mode)
+      const mode = midiData.channelModes[n.channel] || 'muted';
+      if (mode === 'muted' || mode === 'hidden') continue;
+
+      // Check pitch match (including shifts)
+      const shifted = n.midi + (midiData.octaveShift * 12) + midiData.semitoneShift;
+      if (shifted !== noteDef.midi) continue;
+
+      matches++;
+
+      if (!best || start > best.time) best = n;
+    }
+
+    dbg('altClick:match', {
+      btnId: id,
+      matches,
+      chosen: best
+        ? { midi: best.midi, time: best.time, duration: best.duration, channel: best.channel }
+        : null
+    });
+
+    if (best) {
+      midiData.onFingeringOverride(best.midi, best.time, best.channel, id);
     }
   };
 
